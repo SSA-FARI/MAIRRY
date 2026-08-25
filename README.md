@@ -120,7 +120,7 @@ cd ..\backend
 | AI | backend/ai/ |
 | Full-stack | contracts/, 통합, 배포, E2E |
 
-각 영역의 AGENTS.md와 docs/02_MVP_SCOPE.md를 먼저 확인합니다. API나 AI 스키마를 변경할 때는 contracts와 docs/07_API_SPEC.md를 함께 갱신합니다.
+Codex와 Claude Code 모두 docs/ENGINEERING_GUIDE.md를 공통 규칙으로 사용합니다. AGENTS.md와 CLAUDE.md는 공통 문서를 연결하는 어댑터이며 규칙을 중복 관리하지 않습니다.
 
 ## 핵심 개발 원칙
 
@@ -140,4 +140,3 @@ cd ..\backend
 - 아키텍처와 ERD
 - API·Agent 규칙
 - 테스트 시나리오
-

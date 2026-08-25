@@ -1,4 +1,4 @@
-# Codex Adapter
+# Claude Code Adapter
 
 작업을 시작하기 전에 [docs/ENGINEERING_GUIDE.md](docs/ENGINEERING_GUIDE.md)를 읽고 전체 규칙을 따른다.
 
