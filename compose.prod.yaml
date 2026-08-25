@@ -1,0 +1,25 @@
+services:
+  frontend:
+    build:
+      target: production
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/api}
+    environment:
+      NODE_ENV: production
+    volumes: !reset []
+    restart: unless-stopped
+
+  backend:
+    build:
+      target: production
+    environment:
+      APP_ENV: production
+      ENABLE_DEMO_FALLBACK: "false"
+    volumes: !reset []
+    restart: unless-stopped
+
+  postgres:
+    restart: unless-stopped
+
+  minio:
+    restart: unless-stopped

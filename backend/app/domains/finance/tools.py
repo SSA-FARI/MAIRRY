@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel
@@ -27,7 +27,6 @@ def success(tool_name: str, data: dict[str, Any]) -> ToolResult:
         tool_name=tool_name,
         data=data,
         evidence=[],
-        calculated_at=datetime.now(timezone.utc),
+        calculated_at=datetime.now(UTC),
         error=None,
     )
-

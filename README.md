@@ -63,6 +63,11 @@ MAIRRY/
 
 ## 시작하기
 
+필수 도구:
+
+- Docker Desktop 또는 Docker Engine + Compose v2
+- production override의 !reset 지원을 위해 최신 Docker Compose 권장
+
 ### 1. 저장소 복제
 
 ~~~powershell
@@ -70,7 +75,48 @@ git clone https://github.com/ssafyHuman/MAIRRY.git
 cd MAIRRY
 ~~~
 
-### 2. 개발 환경 준비
+### 2. 환경파일 준비
+
+~~~powershell
+Copy-Item .env.example .env
+~~~
+
+AI 연동이 필요한 경우 .env에 실제 키와 모델명을 입력합니다. .env는 Git에 커밋하지 않습니다.
+
+### 3. Docker로 전체 실행
+
+~~~powershell
+docker compose up --build -d
+docker compose ps
+~~~
+
+접속 주소:
+
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:8000
+- Swagger: http://localhost:8000/docs
+- PostgreSQL: localhost:5432
+- MinIO API: http://localhost:9000
+- MinIO Console: http://localhost:9001
+
+로그와 종료:
+
+~~~powershell
+docker compose logs --follow
+docker compose down
+~~~
+
+PowerShell 관리 스크립트를 사용할 수도 있습니다.
+
+~~~powershell
+.\scripts\docker.ps1 up
+.\scripts\docker.ps1 status
+.\scripts\docker.ps1 logs
+.\scripts\docker.ps1 test
+.\scripts\docker.ps1 down
+~~~
+
+### 4. Docker 없이 개발 환경 준비
 
 Python과 pnpm이 PATH에 있다면:
 
@@ -80,7 +126,7 @@ Python과 pnpm이 PATH에 있다면:
 
 스크립트는 프론트 의존성, Backend 가상환경·의존성, 로컬 환경파일을 준비합니다. 실제 API 키는 .env에만 입력하고 커밋하지 않습니다.
 
-### 3. 프론트 실행
+### 5. 프론트 단독 실행
 
 ~~~powershell
 cd frontend
@@ -89,7 +135,7 @@ pnpm dev
 
 기본 주소: http://localhost:3000
 
-### 4. 백엔드 실행
+### 6. 백엔드 단독 실행
 
 ~~~powershell
 cd backend
@@ -100,7 +146,7 @@ cd backend
 - Swagger: http://localhost:8000/docs
 - Health: http://localhost:8000/api/health
 
-### 5. 테스트
+### 7. 테스트
 
 ~~~powershell
 cd frontend

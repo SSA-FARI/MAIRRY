@@ -23,6 +23,7 @@
 | AI | Vision LLM, 구조화 출력, Tool Calling |
 | Contract | OpenAPI, JSON Schema |
 | Test | Pytest, Playwright 예정 |
+| Local Runtime | Docker Compose |
 
 ## 3. 디렉터리와 소유권
 
@@ -286,11 +287,29 @@ cd ..\backend
 .\.venv\Scripts\ruff.exe check .
 ~~~
 
-## 10. Git과 변경 단위
+## 10. Docker 실행 규칙
+
+- 로컬 통합 실행의 기준은 저장소 루트 compose.yaml이다.
+- 서비스 이름은 frontend, backend, postgres, minio, minio-init을 사용한다.
+- 개발 이미지는 소스를 bind mount하고 hot reload를 사용한다.
+- production override는 compose.prod.yaml에서 관리한다.
+- 비밀값은 이미지나 Compose 파일에 추가하지 않고 로컬 .env 또는 배포 환경변수로 주입한다.
+- 데이터 초기화가 필요해도 named volume을 임의로 삭제하지 않는다.
+
+권장 명령:
+
+~~~powershell
+.\scripts\docker.ps1 up
+.\scripts\docker.ps1 status
+.\scripts\docker.ps1 logs
+.\scripts\docker.ps1 test
+.\scripts\docker.ps1 down
+~~~
+
+## 11. Git과 변경 단위
 
 - 브랜치는 feature/담당기능 형태를 권장한다.
 - 커밋은 하나의 목적만 담는다.
 - 생성물, 환경파일, 실제 계약서와 개인정보를 커밋하지 않는다.
 - PR에는 변경 목적, 주요 변경, 테스트 결과, 계약 변경 여부를 작성한다.
 - 공개 계약을 바꾸는 PR은 관련 담당자의 확인을 받는다.
-
