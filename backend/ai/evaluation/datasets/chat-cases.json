@@ -1,0 +1,14 @@
+[
+  {
+    "question": "가장 가까운 잔금일은 언제야?",
+    "expectedIntent": "SCHEDULE",
+    "expectedTool": "getUpcomingPayments"
+  },
+  {
+    "question": "가전 비용 300만 원을 추가하면 괜찮아?",
+    "expectedIntent": "EXPENSE_SIMULATION",
+    "expectedTool": "simulateAdditionalExpense",
+    "expectedArguments": {"name": "가전 비용", "amount": 3000000}
+  }
+]
+

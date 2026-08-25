@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mairry.local/schemas/ai-extraction.json",
+  "title": "DocumentExtraction",
+  "type": "object",
+  "required": ["documentType", "company", "totalPrice", "payments", "cancellationTerms", "warnings"],
+  "properties": {
+    "documentType": {"enum": ["WEDDING_HALL", "UNKNOWN"]},
+    "company": {"type": ["string", "null"]},
+    "totalPrice": {"type": ["integer", "null"], "minimum": 0},
+    "payments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "amount", "dueDate", "status", "sourceText"],
+        "properties": {
+          "name": {"type": "string"},
+          "amount": {"type": ["integer", "null"], "minimum": 0},
+          "dueDate": {"type": ["string", "null"], "format": "date"},
+          "status": {"enum": ["PAID", "UNPAID", "UNKNOWN"]},
+          "sourceText": {"type": "string"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "cancellationTerms": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["summary", "sourceText"],
+        "properties": {
+          "summary": {"type": "string"},
+          "sourceText": {"type": "string"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "warnings": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": false
+}

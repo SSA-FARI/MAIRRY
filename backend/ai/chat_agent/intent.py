@@ -1,0 +1,10 @@
+from enum import StrEnum
+
+
+class ChatIntent(StrEnum):
+    CONTRACT = "CONTRACT"
+    SCHEDULE = "SCHEDULE"
+    FINANCE_SUMMARY = "FINANCE_SUMMARY"
+    EXPENSE_SIMULATION = "EXPENSE_SIMULATION"
+    UNKNOWN = "UNKNOWN"
+

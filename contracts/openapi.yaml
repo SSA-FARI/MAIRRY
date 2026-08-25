@@ -1,0 +1,76 @@
+openapi: 3.1.0
+info:
+  title: MAIRRY API
+  version: 0.1.0
+servers:
+  - url: http://localhost:8000/api
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      responses:
+        "200":
+          description: API health
+  /wedding-plan:
+    get:
+      operationId: getWeddingPlan
+      responses:
+        "200":
+          description: Current wedding plan
+    put:
+      operationId: upsertWeddingPlan
+      responses:
+        "200":
+          description: Saved wedding plan
+  /documents:
+    post:
+      operationId: uploadDocument
+      responses:
+        "201":
+          description: Uploaded document
+  /documents/{documentId}/analyze:
+    post:
+      operationId: analyzeDocument
+      parameters:
+        - in: path
+          name: documentId
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: Extraction result
+  /documents/{documentId}/confirm:
+    put:
+      operationId: confirmDocument
+      parameters:
+        - in: path
+          name: documentId
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: Confirmed contract
+  /contracts:
+    get:
+      operationId: listContracts
+      responses:
+        "200":
+          description: Contract list
+  /finance/summary:
+    get:
+      operationId: getFinanceSummary
+      responses:
+        "200":
+          description: Finance summary
+  /finance/simulate:
+    post:
+      operationId: simulateAdditionalExpense
+      responses:
+        "200":
+          description: Simulation result
+  /chat:
+    post:
+      operationId: chat
+      responses:
+        "200":
+          description: Grounded assistant answer

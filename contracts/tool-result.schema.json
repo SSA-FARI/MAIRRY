@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mairry.local/schemas/tool-result.json",
+  "title": "ToolResult",
+  "type": "object",
+  "required": ["status", "toolName", "data", "evidence", "calculatedAt", "error"],
+  "properties": {
+    "status": {
+      "enum": ["SUCCESS", "NOT_FOUND", "INSUFFICIENT_DATA", "INVALID_ARGUMENT", "TOOL_ERROR"]
+    },
+    "toolName": {"type": "string"},
+    "data": {"type": ["object", "null"]},
+    "evidence": {"type": "array", "items": {"type": "object"}},
+    "calculatedAt": {"type": "string", "format": "date-time"},
+    "error": {"type": ["object", "null"]}
+  },
+  "additionalProperties": false
+}
