@@ -23,4 +23,3 @@ class DocumentExtraction(BaseModel):
     payments: list[ExtractedPayment]
     cancellation_terms: list[CancellationTerm]
     warnings: list[str]
-

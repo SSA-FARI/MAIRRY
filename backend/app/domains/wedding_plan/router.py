@@ -13,4 +13,3 @@ def get_wedding_plan() -> dict[str, str]:
 @router.put("")
 def upsert_wedding_plan(payload: WeddingPlanUpsert) -> WeddingPlanUpsert:
     return payload
-

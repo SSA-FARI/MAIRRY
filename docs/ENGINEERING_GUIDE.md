@@ -151,6 +151,8 @@ SUCCESS가 아니면 AI가 임의의 금액이나 날짜를 생성하지 않는�
 - 금액 표시는 공통 formatter를 사용한다.
 - Loading, Empty, Error, Success 상태를 모두 고려한다.
 - 접근 가능한 role·label을 우선하고 필요한 곳만 data-testid를 사용한다.
+- Prettier를 유일한 포맷 기준으로 사용하고 수동 정렬 규칙을 추가하지 않는다.
+- ESLint는 React·TypeScript 코드 품질을 검사하고 Prettier와 포맷 규칙을 중복하지 않는다.
 
 ### Python·FastAPI
 
@@ -161,6 +163,7 @@ SUCCESS가 아니면 AI가 임의의 금액이나 날짜를 생성하지 않는�
 - 도메인 예외는 공통 오류 형식으로 변환한다.
 - 계산 함수는 I/O 없이 단위 테스트 가능한 순수 함수로 작성한다.
 - ruff 기준 line length 100을 따른다.
+- Python 포맷은 Ruff formatter만 사용하며 Black과 동시에 적용하지 않는다.
 
 ## 7. API와 계약 변경
 
@@ -271,6 +274,8 @@ def test_summary_excludes_paid_payment() -> None:
 
 Frontend:
 
+- Prettier format check
+- ESLint
 - typecheck
 - production build
 - 정상·빈 상태·오류 상태 확인
@@ -278,6 +283,7 @@ Frontend:
 
 Backend:
 
+- Ruff lint·format check
 - 계산 단위 테스트
 - 상태 전이·API 통합 테스트
 - 사용자 데이터 격리 확인
@@ -300,12 +306,15 @@ AI:
 
 ~~~powershell
 cd frontend
+pnpm format:check
+pnpm lint
 pnpm typecheck
 pnpm build
 
 cd ..\backend
 .\.venv\Scripts\python.exe -m pytest
 .\.venv\Scripts\ruff.exe check .
+.\.venv\Scripts\ruff.exe format --check .
 ~~~
 
 ## 10. Docker 실행 규칙

@@ -13,4 +13,3 @@ def decide_tool(intent: ChatIntent, arguments: dict[str, object] | None = None) 
     if tool_name is None:
         return None
     return ToolCall(tool_name=tool_name, arguments=arguments or {})
-

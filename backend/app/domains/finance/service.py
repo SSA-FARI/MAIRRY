@@ -12,9 +12,7 @@ def calculate_summary(
     confirmed_payments: Iterable[PaymentInput],
 ) -> FinanceSummary:
     remaining_expense = sum(
-        payment.amount
-        for payment in confirmed_payments
-        if payment.status == "UNPAID"
+        payment.amount for payment in confirmed_payments if payment.status == "UNPAID"
     )
     return FinanceSummary(
         available_asset=available_asset,
@@ -33,4 +31,3 @@ def simulate_additional_expense(
         simulated_expected_balance=simulated_balance,
         shortage_amount=max(0, -simulated_balance),
     )
-

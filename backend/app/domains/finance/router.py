@@ -22,4 +22,3 @@ def simulate_finance(payload: SimulationRequest) -> dict[str, int]:
         "simulatedExpectedBalance": -payload.amount,
         "shortageAmount": payload.amount,
     }
-

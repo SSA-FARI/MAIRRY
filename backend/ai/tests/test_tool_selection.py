@@ -16,4 +16,3 @@ def test_expense_intent_preserves_arguments() -> None:
     assert call is not None
     assert call.tool_name == "simulateAdditionalExpense"
     assert call.arguments["amount"] == 3_000_000
-

@@ -13,4 +13,3 @@ def chat(payload: ChatRequest) -> ChatResponse:
         citations=[],
         calculation=None,
     )
-

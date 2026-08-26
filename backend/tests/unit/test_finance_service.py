@@ -27,4 +27,3 @@ def test_simulate_additional_expense() -> None:
 
     assert result.simulated_expected_balance == 7_000_000
     assert result.shortage_amount == 0
-

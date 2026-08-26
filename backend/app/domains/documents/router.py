@@ -20,4 +20,3 @@ def analyze_document(document_id: str) -> dict[str, str]:
 @router.put("/{document_id}/confirm")
 def confirm_document(document_id: str) -> dict[str, str]:
     return {"documentId": document_id, "status": "CONFIRMED"}
-

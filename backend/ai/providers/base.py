@@ -12,4 +12,3 @@ class AiProvider(Protocol):
         message: str,
         tool_result: dict[str, Any],
     ) -> str: ...
-

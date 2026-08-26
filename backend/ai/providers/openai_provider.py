@@ -19,4 +19,3 @@ class OpenAiProvider:
         tool_result: dict[str, Any],
     ) -> str:
         raise NotImplementedError
-

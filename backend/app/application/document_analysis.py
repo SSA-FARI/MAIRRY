@@ -10,4 +10,3 @@ async def run_document_analysis(
     provider: AiProvider,
 ) -> DocumentExtraction:
     return await analyze_document(file_path, provider)
-

@@ -1,10 +1,6 @@
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api";
 
-export async function apiClient<T>(
-  path: string,
-  init?: RequestInit,
-): Promise<T> {
+export async function apiClient<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers: {
@@ -19,4 +15,3 @@ export async function apiClient<T>(
 
   return response.json() as Promise<T>;
 }
-

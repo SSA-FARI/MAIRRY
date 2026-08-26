@@ -8,4 +8,3 @@ def explain_tool_result(question: str, result: ToolResultView) -> str:
         "Backend Tool 결과를 바탕으로 답변을 생성해야 합니다. "
         f"tool={result.tool_name}, question={question}"
     )
-

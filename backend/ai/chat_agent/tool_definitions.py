@@ -16,4 +16,3 @@ TOOLS = {
         "required": ["name", "amount"],
     },
 }
-

@@ -21,4 +21,3 @@ def process_chat(
 
     result = execute_tool(call.tool_name, call.arguments, user_id)
     return explain_tool_result(message, result)
-

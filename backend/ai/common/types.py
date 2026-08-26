@@ -23,4 +23,3 @@ class ToolResultView(BaseModel):
     evidence: list[dict[str, Any]] = Field(default_factory=list)
     calculated_at: str
     error: dict[str, Any] | None = None
-

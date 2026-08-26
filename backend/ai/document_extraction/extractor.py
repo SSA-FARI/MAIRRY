@@ -12,4 +12,3 @@ async def analyze_document(
         raise NotImplementedError("AI provider must be configured")
     payload = await provider.extract_document(file_path)
     return DocumentExtraction.model_validate(payload)
-

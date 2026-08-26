@@ -8,12 +8,16 @@
   --border: #e4e7ec;
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 body {
   margin: 0;
   background: var(--background);
   color: var(--text);
   font-family: Arial, "Noto Sans KR", sans-serif;
 }
-button, input { font: inherit; }
-
+button,
+input {
+  font: inherit;
+}

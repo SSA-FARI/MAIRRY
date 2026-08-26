@@ -12,4 +12,3 @@ export interface FinanceSummary {
   expectedBalance: number;
   nearestPayment: UpcomingPayment | null;
 }
-
