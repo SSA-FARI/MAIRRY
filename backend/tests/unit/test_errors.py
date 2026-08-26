@@ -50,6 +50,7 @@ def test_unexpected_error_keeps_sanitized_traceback_without_internal_message(cap
 
     assert response.status_code == 500
     assert response.json()["error"]["code"] == "INTERNAL_ERROR"
+    trace_id = response.json()["error"]["details"]["traceId"]
     assert "sensitive internal message" not in response.text
     assert len(caplog.records) == 1
     record = caplog.records[0]
@@ -58,3 +59,4 @@ def test_unexpected_error_keeps_sanitized_traceback_without_internal_message(cap
     assert "raise_unexpected_error" in caplog.text
     assert "sensitive internal message" not in caplog.text
     assert "unexpected error details redacted" in caplog.text
+    assert f"traceId={trace_id}" in caplog.text

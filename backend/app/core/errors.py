@@ -2,6 +2,7 @@ import logging
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from typing import Any
+from uuid import uuid4
 
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
@@ -75,12 +76,14 @@ async def http_error_handler(_request: Request, exc: StarletteHTTPException) -> 
 
 
 async def unexpected_error_handler(request: Request, exc: Exception) -> JSONResponse:
-    sanitized_exception = RuntimeError("unexpected error details redacted")
+    trace_id = str(uuid4())
+    sanitized_exception = RuntimeError(f"{type(exc).__name__}: unexpected error details redacted")
     logger.error(
-        "Unhandled API error: method=%s path=%s errorType=%s",
+        "Unhandled API error: method=%s path=%s errorType=%s traceId=%s",
         request.method,
         request.url.path,
         type(exc).__name__,
+        trace_id,
         exc_info=(RuntimeError, sanitized_exception, exc.__traceback__),
     )
     return _response(
@@ -88,7 +91,7 @@ async def unexpected_error_handler(request: Request, exc: Exception) -> JSONResp
         ErrorBody(
             code=ErrorCode.INTERNAL_ERROR,
             message="일시적인 오류가 발생했습니다.",
-            details={},
+            details={"traceId": trace_id},
         ),
     )
 
