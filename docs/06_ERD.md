@@ -23,7 +23,11 @@ erDiagram
     }
     WEDDING_PLAN {
       uuid id PK
+<<<<<<< HEAD
       uuid user_id FK, UK
+=======
+      uuid user_id FK_UK
+>>>>>>> 90910e1153772b532e4aad84be43df85c47b7179
       date wedding_date
       bigint available_asset
       timestamptz created_at
@@ -47,7 +51,11 @@ erDiagram
     CONTRACT {
       uuid id PK
       uuid wedding_plan_id FK
+<<<<<<< HEAD
       uuid document_id FK, UK
+=======
+      uuid document_id FK_UK
+>>>>>>> 90910e1153772b532e4aad84be43df85c47b7179
       varchar document_type
       varchar company
       bigint total_price
