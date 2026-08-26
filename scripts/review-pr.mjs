@@ -18,7 +18,7 @@ for (const name of requiredEnvironment) {
 
 const repository = process.env.GITHUB_REPOSITORY;
 const pullRequestNumber = Number.parseInt(process.env.PR_NUMBER, 10);
-const model = process.env.GEMINI_MODEL || "gemini-3.7-flash";
+const model = process.env.GEMINI_MODEL || "gemini-3.5-flash";
 
 if (!Number.isSafeInteger(pullRequestNumber) || pullRequestNumber <= 0) {
   throw new Error("PR_NUMBER must be a positive integer");
