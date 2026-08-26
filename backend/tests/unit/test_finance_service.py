@@ -27,3 +27,15 @@ def test_simulate_additional_expense() -> None:
 
     assert result.simulated_expected_balance == 7_000_000
     assert result.shortage_amount == 0
+
+
+def test_simulate_additional_expense_reports_shortage() -> None:
+    summary = calculate_summary(
+        30_000_000,
+        [PaymentInput(amount=20_000_000, status="UNPAID")],
+    )
+
+    result = simulate_additional_expense(summary, 13_000_000)
+
+    assert result.simulated_expected_balance == -3_000_000
+    assert result.shortage_amount == 3_000_000
