@@ -12,7 +12,7 @@ async def upload_document(file: UploadFile) -> dict[str, str]:
     }
 
 
-@router.post("/{document_id}/analyze")
+@router.post("/{document_id}/analyze", status_code=status.HTTP_202_ACCEPTED)
 def analyze_document(document_id: str) -> dict[str, str]:
     return {"documentId": document_id, "status": "PROCESSING"}
 

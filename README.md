@@ -116,6 +116,7 @@ PowerShell 관리 스크립트를 사용할 수도 있습니다.
 
 ```powershell
 .\scripts\docker.ps1 up
+.\scripts\docker.ps1 migrate
 .\scripts\docker.ps1 status
 .\scripts\docker.ps1 logs
 .\scripts\docker.ps1 test
@@ -161,6 +162,9 @@ pnpm build
 
 cd ..\backend
 .\.venv\Scripts\python.exe -m pytest
+
+cd ..
+.\scripts\validate-contracts.ps1
 ```
 
 ## 역할별 개발 범위
