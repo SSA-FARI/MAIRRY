@@ -3,7 +3,8 @@ const REVIEW_COMMENT_AUTHOR = "github-actions[bot]";
 const MAX_REVIEW_LENGTH = 60_000;
 const GITHUB_API = "https://api.github.com";
 const GEMINI_API = "https://generativelanguage.googleapis.com/v1beta/interactions";
-const GEMINI_MAX_ATTEMPTS = 5;
+const GEMINI_MAX_RETRIES = 3;
+const GEMINI_MAX_ATTEMPTS = GEMINI_MAX_RETRIES + 1;
 const GEMINI_RETRY_BASE_DELAY_MS = 1_000;
 const GEMINI_RETRY_MAX_DELAY_MS = 15_000;
 
@@ -103,7 +104,7 @@ ${diff}
 }
 
 function isRetryableGeminiStatus(status) {
-  return status === 429 || (status >= 500 && status <= 599);
+  return [429, 500, 502, 503].includes(status);
 }
 
 function retryAfterDelayMs(response) {
@@ -254,6 +255,35 @@ const diff = await fetchPullRequestDiff();
 if (!diff.trim()) {
   await upsertReviewComment("## Critical\n없음\n\n## Major\n없음\n\n## Minor\n없음");
 } else {
-  const review = await reviewWithGemini(diff);
-  await upsertReviewComment(review);
+  await upsertReviewComment(
+    "_Gemini가 PR diff를 검토하고 있습니다. 완료되면 이 댓글이 자동으로 갱신됩니다._",
+  );
+
+  try {
+    const review = await reviewWithGemini(diff);
+    await upsertReviewComment(review);
+  } catch (error) {
+    const runUrl = process.env.GITHUB_RUN_ID
+      ? `https://github.com/${repository}/actions/runs/${process.env.GITHUB_RUN_ID}`
+      : null;
+    const runLink = runUrl ? ` [Actions 실행 로그](${runUrl})를 확인해 주세요.` : "";
+
+    try {
+      await upsertReviewComment(
+        "⚠️ Gemini API의 일시적인 오류로 자동 리뷰를 생성하지 못했습니다." +
+          `${runLink} PR 코드에 문제가 있다는 의미는 아니며, 워크플로를 재실행하면 이 댓글이 갱신됩니다.`,
+      );
+    } catch (commentError) {
+      throw new AggregateError(
+        [error, commentError],
+        "Gemini review and failure-status comment both failed",
+      );
+    }
+
+    console.warn(
+      `Gemini review failed after ${GEMINI_MAX_RETRIES} retries; ` +
+        "the workflow will remain non-blocking.",
+      error,
+    );
+  }
 }
