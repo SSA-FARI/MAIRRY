@@ -1,0 +1,19 @@
+name: "🐛 Bug"
+description: "버그 수정"
+title: "[Fix] "
+labels: ["bug"]
+
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: "🐛 문제"
+      placeholder: "문제 상황과 재현 방법"
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: "🛠 작업 내용"
+      placeholder: "수정할 내용"

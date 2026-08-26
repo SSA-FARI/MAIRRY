@@ -1,0 +1,21 @@
+name: "✨ Feature"
+description: "새 기능"
+title: "[Feat] "
+labels: ["feat"]
+
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: "📌 작업 내용"
+      placeholder: |
+        - 기능 설명
+        - 주요 작업 내용
+    validations:
+      required: true
+
+  - type: textarea
+    id: reference
+    attributes:
+      label: "🔗 참고"
+      placeholder: "관련 링크, 문서, 이미지 등"
