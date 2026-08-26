@@ -14,3 +14,11 @@ alias 변환하며, 계약 파일과 구현 모델을 단순히 같은 이름으
 
 구현 내부 모델을 이 디렉터리에 두지 않습니다. 경계가 변경될 때만 수정합니다.
 
+## 검증
+
+```powershell
+.\scripts\validate-contracts.ps1
+```
+
+검증 범위는 OpenAPI 문법, JSON Schema 문법, `contracts/examples/contract-examples.json`의 공개 API,
+AI 추출 및 ToolResult 예시다. 계약을 변경할 때 예시와 검증 결과도 함께 갱신한다.

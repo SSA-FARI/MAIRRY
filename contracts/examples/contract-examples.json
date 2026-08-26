@@ -1,0 +1,176 @@
+{
+  "openapi": {
+    "Health": [
+      {"status": "ok"}
+    ],
+    "WeddingPlan": [
+      {
+        "id": "7d985a2f-13ab-4fab-a3d7-d3ca8d696977",
+        "weddingDate": "2027-05-15",
+        "availableAsset": 30000000
+      }
+    ],
+    "Document": [
+      {
+        "id": "8f32eb5e-a2ac-44be-8ce8-393d466bc901",
+        "originalName": "contract.pdf",
+        "status": "PROCESSING",
+        "analysisSource": null,
+        "extraction": null,
+        "error": null
+      },
+      {
+        "id": "8f32eb5e-a2ac-44be-8ce8-393d466bc901",
+        "originalName": "contract.pdf",
+        "status": "REVIEW_REQUIRED",
+        "analysisSource": "LIVE_AI",
+        "extraction": {
+          "documentType": "WEDDING_HALL",
+          "company": "A웨딩홀",
+          "totalPrice": 23000000,
+          "payments": [
+            {
+              "name": "잔금",
+              "amount": 20000000,
+              "dueDate": "2027-04-30",
+              "status": "UNPAID",
+              "sourceText": "잔금 20,000,000원은 2027년 4월 30일까지"
+            }
+          ],
+          "cancellationTerms": [],
+          "warnings": []
+        },
+        "error": null
+      }
+    ],
+    "ContractDetail": [
+      {
+        "id": "90af8db0-a099-40a0-bb92-720ec331a6a0",
+        "documentId": "8f32eb5e-a2ac-44be-8ce8-393d466bc901",
+        "documentType": "WEDDING_HALL",
+        "company": "A웨딩홀",
+        "totalPrice": 23000000,
+        "status": "CONFIRMED",
+        "payments": [
+          {
+            "name": "잔금",
+            "amount": 20000000,
+            "dueDate": "2027-04-30",
+            "status": "UNPAID",
+            "sourceText": "잔금 20,000,000원은 2027년 4월 30일까지"
+          }
+        ],
+        "cancellationTerms": []
+      }
+    ],
+    "FinanceSummary": [
+      {
+        "availableAsset": 30000000,
+        "remainingExpense": 20000000,
+        "expectedBalance": 10000000,
+        "nearestPayment": {
+          "contractId": "90af8db0-a099-40a0-bb92-720ec331a6a0",
+          "company": "A웨딩홀",
+          "name": "잔금",
+          "amount": 20000000,
+          "dueDate": "2027-04-30"
+        },
+        "timeline": []
+      }
+    ],
+    "SimulationResult": [
+      {
+        "currentExpectedBalance": 10000000,
+        "simulatedExpectedBalance": 7000000,
+        "shortageAmount": 0
+      }
+    ],
+    "ChatResponse": [
+      {
+        "answer": "A웨딩홀 잔금일은 2027년 4월 30일입니다.",
+        "answerType": "CONTRACT",
+        "citations": [
+          {
+            "contractId": "90af8db0-a099-40a0-bb92-720ec331a6a0",
+            "label": "A웨딩홀 · 잔금",
+            "sourceText": "잔금 20,000,000원은 2027년 4월 30일까지"
+          }
+        ],
+        "calculation": null
+      }
+    ],
+    "ErrorResponse": [
+      {
+        "error": {
+          "code": "VALIDATION_ERROR",
+          "message": "요청 값을 확인해 주세요.",
+          "details": {}
+        }
+      }
+    ]
+  },
+  "aiExtraction": [
+    {
+      "documentType": "WEDDING_HALL",
+      "company": "A웨딩홀",
+      "totalPrice": 23000000,
+      "payments": [
+        {
+          "name": "잔금",
+          "amount": 20000000,
+          "dueDate": null,
+          "status": "UNPAID",
+          "sourceText": "잔금 20,000,000원"
+        }
+      ],
+      "cancellationTerms": [],
+      "warnings": ["잔금 지급일을 확인해 주세요."]
+    }
+  ],
+  "toolResults": [
+    {
+      "status": "SUCCESS",
+      "toolName": "getFinanceSummary",
+      "data": {
+        "availableAsset": 30000000,
+        "remainingExpense": 20000000,
+        "expectedBalance": 10000000
+      },
+      "evidence": [],
+      "calculatedAt": "2026-08-26T12:00:00+09:00",
+      "error": null
+    },
+    {
+      "status": "NOT_FOUND",
+      "toolName": "getContractDetails",
+      "data": null,
+      "evidence": [],
+      "calculatedAt": "2026-08-26T12:00:00+09:00",
+      "error": {"code": "RESOURCE_NOT_FOUND", "message": "계약을 찾을 수 없습니다."}
+    },
+    {
+      "status": "INSUFFICIENT_DATA",
+      "toolName": "getFinanceSummary",
+      "data": null,
+      "evidence": [],
+      "calculatedAt": "2026-08-26T12:00:00+09:00",
+      "error": {"code": "INSUFFICIENT_DATA", "message": "결혼 계획이 필요합니다."}
+    },
+    {
+      "status": "INVALID_ARGUMENT",
+      "toolName": "simulateAdditionalExpense",
+      "data": null,
+      "evidence": [],
+      "calculatedAt": "2026-08-26T12:00:00+09:00",
+      "error": {"code": "INVALID_ARGUMENT", "message": "금액은 0보다 커야 합니다."}
+    },
+    {
+      "status": "TOOL_ERROR",
+      "toolName": "getUpcomingPayments",
+      "data": null,
+      "evidence": [],
+      "calculatedAt": "2026-08-26T12:00:00+09:00",
+      "error": {"code": "TOOL_ERROR", "message": "조회에 실패했습니다."}
+    }
+  ]
+}

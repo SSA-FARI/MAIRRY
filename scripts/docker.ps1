@@ -5,6 +5,7 @@ param(
         "rebuild",
         "logs",
         "status",
+        "migrate",
         "test",
         "prod-up",
         "prod-down"
@@ -39,8 +40,16 @@ try {
         "status" {
             docker compose ps
         }
+        "migrate" {
+            docker compose run --rm backend python -m alembic -c alembic.ini upgrade head
+        }
         "test" {
+            docker compose run --rm frontend pnpm format:check
+            docker compose run --rm frontend pnpm lint
             docker compose run --rm frontend pnpm typecheck
+            docker compose run --rm frontend pnpm build
+            docker compose run --rm backend python -m ruff check app ai tests
+            docker compose run --rm backend python -m ruff format --check app ai tests
             docker compose run --rm backend python -m pytest
         }
         "prod-up" {
@@ -55,4 +64,3 @@ try {
 finally {
     Pop-Location
 }
-

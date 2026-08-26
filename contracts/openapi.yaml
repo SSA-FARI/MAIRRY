@@ -133,11 +133,13 @@ components:
       properties: {weddingDate: {type: string, format: date}, availableAsset: {type: integer, minimum: 0}}
       additionalProperties: false
     WeddingPlan:
-      allOf:
-        - $ref: "#/components/schemas/WeddingPlanUpsert"
-        - type: object
-          required: [id]
-          properties: {id: {type: string, format: uuid}}
+      type: object
+      required: [id, weddingDate, availableAsset]
+      properties:
+        id: {type: string, format: uuid}
+        weddingDate: {type: string, format: date}
+        availableAsset: {type: integer, minimum: 0}
+      additionalProperties: false
     DocumentStatus: {type: string, enum: [UPLOADED, PROCESSING, REVIEW_REQUIRED, FAILED, CONFIRMED]}
     DocumentUpload:
       type: object
@@ -292,7 +294,21 @@ components:
     ErrorBody:
       type: object
       required: [code, message, details]
-      properties: {code: {type: string}, message: {type: string}, details: {type: object}}
+      properties:
+        code:
+          type: string
+          enum:
+            - VALIDATION_ERROR
+            - RESOURCE_NOT_FOUND
+            - INVALID_STATE
+            - FILE_TOO_LARGE
+            - UNSUPPORTED_MEDIA_TYPE
+            - EXTRACTION_VALIDATION_ERROR
+            - AI_PROVIDER_ERROR
+            - STORAGE_ERROR
+            - INTERNAL_ERROR
+        message: {type: string}
+        details: {type: object}
       additionalProperties: false
     ErrorResponse:
       type: object
