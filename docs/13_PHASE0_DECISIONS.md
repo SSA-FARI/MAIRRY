@@ -52,8 +52,9 @@ Phase 1 병렬 개발 전에 A/B/C/D가 공유해야 하는 데이터 타입과 
 ## 오류 로깅
 
 - 사용자 응답에는 내부 예외 메시지와 traceback을 노출하지 않는다.
-- 처리되지 않은 예외 로그에는 요청 method/path, 예외 타입, traceback과 traceId를 남긴다.
+- 처리되지 않은 예외 로그에는 요청 method/path, 예외 타입, 안전한 traceback frame과 traceId를 남긴다.
 - 원본 예외 메시지는 계약 원문·금액·개인정보를 포함할 수 있으므로 공통 500 handler에서 기록하지 않는다.
+- 안전한 traceback은 파일·라인·함수명만 문자열로 기록하며 `exc_info`에 대체 예외를 주입하지 않는다.
 - 예상 가능한 DB·Storage·AI 오류는 도메인 경계에서 AppError로 변환하고 안전한 code와 details를 사용한다.
 - 500 응답의 `details.traceId`와 내부 로그의 traceId로 사용자 오류와 서버 로그를 연결한다.
 

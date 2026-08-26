@@ -1,4 +1,5 @@
 import logging
+import traceback
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from typing import Any
@@ -39,6 +40,13 @@ def _response(status_code: int, error: ErrorBody) -> JSONResponse:
     return JSONResponse(status_code=status_code, content=payload)
 
 
+def _sanitized_traceback(exc: Exception) -> str:
+    frames = traceback.extract_tb(exc.__traceback__)
+    if not frames:
+        return "unavailable"
+    return " -> ".join(f"{frame.filename}:{frame.lineno} in {frame.name}" for frame in frames)
+
+
 async def app_error_handler(_request: Request, exc: AppError) -> JSONResponse:
     return _response(
         exc.status_code,
@@ -77,14 +85,13 @@ async def http_error_handler(_request: Request, exc: StarletteHTTPException) -> 
 
 async def unexpected_error_handler(request: Request, exc: Exception) -> JSONResponse:
     trace_id = str(uuid4())
-    sanitized_exception = RuntimeError(f"{type(exc).__name__}: unexpected error details redacted")
     logger.error(
-        "Unhandled API error: method=%s path=%s errorType=%s traceId=%s",
+        "Unhandled API error: method=%s path=%s errorType=%s traceId=%s traceback=%s",
         request.method,
         request.url.path,
         type(exc).__name__,
         trace_id,
-        exc_info=(RuntimeError, sanitized_exception, exc.__traceback__),
+        _sanitized_traceback(exc),
     )
     return _response(
         status.HTTP_500_INTERNAL_SERVER_ERROR,

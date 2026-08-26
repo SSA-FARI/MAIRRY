@@ -1,4 +1,5 @@
 import logging
+from io import StringIO
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -42,21 +43,25 @@ def test_app_error_is_serialized_with_common_shape() -> None:
     }
 
 
-def test_unexpected_error_keeps_sanitized_traceback_without_internal_message(caplog) -> None:
+def test_unexpected_error_formats_sanitized_traceback_with_stream_handler() -> None:
     client = TestClient(create_test_app(), raise_server_exceptions=False)
+    stream = StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(logging.Formatter("%(levelname)s %(message)s"))
+    error_logger = logging.getLogger("app.core.errors")
+    error_logger.addHandler(handler)
 
-    with caplog.at_level(logging.ERROR, logger="app.core.errors"):
+    try:
         response = client.get("/unexpected-error")
+    finally:
+        error_logger.removeHandler(handler)
 
     assert response.status_code == 500
     assert response.json()["error"]["code"] == "INTERNAL_ERROR"
     trace_id = response.json()["error"]["details"]["traceId"]
     assert "sensitive internal message" not in response.text
-    assert len(caplog.records) == 1
-    record = caplog.records[0]
-    assert record.exc_info is not None
-    assert record.exc_info[2] is not None
-    assert "raise_unexpected_error" in caplog.text
-    assert "sensitive internal message" not in caplog.text
-    assert "unexpected error details redacted" in caplog.text
-    assert f"traceId={trace_id}" in caplog.text
+    log_output = stream.getvalue()
+    assert "raise_unexpected_error" in log_output
+    assert "test_errors.py" in log_output
+    assert "sensitive internal message" not in log_output
+    assert f"traceId={trace_id}" in log_output
