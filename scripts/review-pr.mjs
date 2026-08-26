@@ -84,6 +84,8 @@ Focus exclusively on actionable correctness and risk findings:
 
 Do not report formatting, naming preferences, import ordering, whitespace, or other style-only issues. Do not praise the code and do not provide a general summary.
 
+Write the entire review in Korean. Keep file paths, code identifiers, API and schema names, literal values, and code snippets in their original form. Use English only where preserving an original technical term is necessary.
+
 Return Markdown in exactly these sections:
 ## Critical
 ## Major
