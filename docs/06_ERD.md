@@ -23,7 +23,7 @@ erDiagram
     }
     WEDDING_PLAN {
       uuid id PK
-      uuid user_id FK_UK
+      uuid user_id FK, UK
       date wedding_date
       bigint available_asset
       timestamptz created_at
@@ -47,7 +47,7 @@ erDiagram
     CONTRACT {
       uuid id PK
       uuid wedding_plan_id FK
-      uuid document_id FK_UK
+      uuid document_id FK, UK
       varchar document_type
       varchar company
       bigint total_price
