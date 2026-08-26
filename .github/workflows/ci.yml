@@ -46,8 +46,10 @@ jobs:
       - name: Format check
         run: pnpm --dir frontend format:check
 
-      - name: Automation script syntax
-        run: node --check scripts/review-pr.mjs
+      - name: Automation script test
+        run: |
+          node --check scripts/review-pr.mjs
+          node --test scripts/review-pr.test.mjs
 
       - name: Production build
         run: pnpm --dir frontend build
