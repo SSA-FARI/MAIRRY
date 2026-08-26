@@ -1,10 +1,12 @@
 from datetime import date
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import Field
+
+from ai.common.schema import AiContractModel
 
 
-class ExtractedPayment(BaseModel):
+class ExtractedPayment(AiContractModel):
     name: str
     amount: int | None = Field(default=None, ge=0)
     due_date: date | None = None
@@ -12,12 +14,12 @@ class ExtractedPayment(BaseModel):
     source_text: str
 
 
-class CancellationTerm(BaseModel):
+class CancellationTerm(AiContractModel):
     summary: str
     source_text: str
 
 
-class DocumentExtraction(BaseModel):
+class DocumentExtraction(AiContractModel):
     document_type: Literal["WEDDING_HALL", "UNKNOWN"]
     company: str | None
     total_price: int | None = Field(default=None, ge=0)
