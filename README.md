@@ -6,13 +6,13 @@ MAIRRY는 예비부부의 결혼 계약서에서 금액·지급일·주요 조�
 
 ## 핵심 흐름
 
-~~~text
+```text
 계약서 업로드
 → AI 정보 추출
 → 사용자 검수·확정
 → 지급 타임라인과 예상 잔액 계산
 → 계약·금액·일정 질문
-~~~
+```
 
 금액과 일정은 AI가 직접 계산하거나 추측하지 않습니다. Backend Tool이 확정 데이터로 조회·계산하고, AI는 결과를 변경하지 않고 근거와 함께 설명합니다.
 
@@ -31,11 +31,11 @@ MAIRRY는 예비부부의 결혼 계약서에서 금액·지급일·주요 조�
 실제 DB CRUD, 파일 저장, 모델 API 연동, 문서 분석, 전체 UI와 인증은 후속 개발 대상입니다.
 
 구현 우선순위와 완료 게이트는 `docs/10_IMPLEMENTATION_PLAN.md`, 4인 기능별 분담은
-`docs/11_TEAM_OWNERSHIP.md`를 기준으로 합니다.
+`docs/11_TEAM_OWNERSHIP.md`, Git 협업 규칙은 `docs/12_GIT_CONVENTION.md`를 기준으로 합니다.
 
 ## 프로젝트 구조
 
-~~~text
+```text
 MAIRRY/
 ├── frontend/              # Next.js UI
 │   ├── src/app/
@@ -54,7 +54,7 @@ MAIRRY/
 ├── docs/                  # 개발 전 문서
 ├── infra/                 # PostgreSQL·MinIO
 └── scripts/               # 개발 환경 초기화
-~~~
+```
 
 ## 기술 스택
 
@@ -76,25 +76,25 @@ Docker Compose가 운영체제와 개발 도구에 관계없는 공통 검증 �
 
 ### 1. 저장소 복제
 
-~~~powershell
+```powershell
 git clone https://github.com/ssafyHuman/MAIRRY.git
 cd MAIRRY
-~~~
+```
 
 ### 2. 환경파일 준비
 
-~~~powershell
+```powershell
 Copy-Item .env.example .env
-~~~
+```
 
 AI 연동이 필요한 경우 .env에 실제 키와 모델명을 입력합니다. .env는 Git에 커밋하지 않습니다.
 
 ### 3. Docker로 전체 실행
 
-~~~powershell
+```powershell
 docker compose up --build -d
 docker compose ps
-~~~
+```
 
 접속 주소:
 
@@ -107,46 +107,46 @@ docker compose ps
 
 로그와 종료:
 
-~~~powershell
+```powershell
 docker compose logs --follow
 docker compose down
-~~~
+```
 
 PowerShell 관리 스크립트를 사용할 수도 있습니다.
 
-~~~powershell
+```powershell
 .\scripts\docker.ps1 up
 .\scripts\docker.ps1 status
 .\scripts\docker.ps1 logs
 .\scripts\docker.ps1 test
 .\scripts\docker.ps1 down
-~~~
+```
 
 ### 4. Docker 없이 개발 환경 준비
 
 Python과 pnpm이 PATH에 있다면:
 
-~~~powershell
+```powershell
 .\scripts\bootstrap.ps1
-~~~
+```
 
 스크립트는 프론트 의존성, Backend 가상환경·의존성, 로컬 환경파일을 준비합니다. 실제 API 키는 .env에만 입력하고 커밋하지 않습니다.
 
 ### 5. 프론트 단독 실행
 
-~~~powershell
+```powershell
 cd frontend
 pnpm dev
-~~~
+```
 
 기본 주소: http://localhost:3000
 
 ### 6. 백엔드 단독 실행
 
-~~~powershell
+```powershell
 cd backend
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
-~~~
+```
 
 - API: http://localhost:8000
 - Swagger: http://localhost:8000/docs
@@ -154,23 +154,23 @@ cd backend
 
 ### 7. 테스트
 
-~~~powershell
+```powershell
 cd frontend
 pnpm typecheck
 pnpm build
 
 cd ..\backend
 .\.venv\Scripts\python.exe -m pytest
-~~~
+```
 
 ## 역할별 개발 범위
 
-| 담당 | 기본 작업 범위 |
-|---|---|
-| Frontend | frontend/ |
-| Backend | backend/app/, backend/tests/ |
-| AI | backend/ai/ |
-| Full-stack | contracts/, 통합, 배포, E2E |
+| 담당       | 기본 작업 범위               |
+| ---------- | ---------------------------- |
+| Frontend   | frontend/                    |
+| Backend    | backend/app/, backend/tests/ |
+| AI         | backend/ai/                  |
+| Full-stack | contracts/, 통합, 배포, E2E  |
 
 Codex와 Claude Code 모두 docs/ENGINEERING_GUIDE.md를 공통 규칙으로 사용합니다. AGENTS.md와 CLAUDE.md는 공통 문서를 연결하는 어댑터이며 규칙을 중복 관리하지 않습니다.
 
@@ -185,10 +185,12 @@ Codex와 Claude Code 모두 docs/ENGINEERING_GUIDE.md를 공통 규칙으로 사
 
 ## 문서
 
-제품 요구사항부터 테스트 시나리오까지 docs/01~09에 정리되어 있습니다.
+제품 요구사항, 구현 계획과 협업 규칙은 `docs/`에 정리되어 있습니다.
 
 - PRD와 MVP 범위
 - 사용자 흐름과 화면 명세
 - 아키텍처와 ERD
 - API·Agent 규칙
 - 테스트 시나리오
+- MVP 구현 계획과 4인 역할 분담
+- Git 커밋·브랜치·PR·Merge 규칙

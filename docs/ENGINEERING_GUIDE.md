@@ -13,7 +13,8 @@
 문서와 구현이 충돌하면 실제 코드에 맞춰 임의 진행하지 말고 관련 계약 문서를 함께 수정한다.
 
 구현 작업은 [10_IMPLEMENTATION_PLAN.md](10_IMPLEMENTATION_PLAN.md)의 선행관계와
-[11_TEAM_OWNERSHIP.md](11_TEAM_OWNERSHIP.md)의 기능 소유권을 따른다.
+[11_TEAM_OWNERSHIP.md](11_TEAM_OWNERSHIP.md)의 기능 소유권을 따른다. Git 작업과 리뷰는
+[12_GIT_CONVENTION.md](12_GIT_CONVENTION.md)를 따른다.
 
 ## 1-1. 개발환경과 에이전트 독립성
 
@@ -28,20 +29,20 @@
 
 ## 2. 기술 스택
 
-| 영역 | 기준 |
-|---|---|
-| Frontend | Next.js, React, TypeScript |
-| Backend | FastAPI, Python 3.12, Pydantic |
-| Database | PostgreSQL |
-| Storage | S3 호환 객체 스토리지 |
-| AI | Vision LLM, 구조화 출력, Tool Calling |
-| Contract | OpenAPI, JSON Schema |
-| Test | Pytest, Playwright 예정 |
-| Local Runtime | Docker Compose |
+| 영역          | 기준                                  |
+| ------------- | ------------------------------------- |
+| Frontend      | Next.js, React, TypeScript            |
+| Backend       | FastAPI, Python 3.12, Pydantic        |
+| Database      | PostgreSQL                            |
+| Storage       | S3 호환 객체 스토리지                 |
+| AI            | Vision LLM, 구조화 출력, Tool Calling |
+| Contract      | OpenAPI, JSON Schema                  |
+| Test          | Pytest, Playwright 예정               |
+| Local Runtime | Docker Compose                        |
 
 ## 3. 디렉터리와 소유권
 
-~~~text
+```text
 frontend/
   src/app/               라우팅과 화면 조합
   src/domains/           도메인별 API·모델·UI
@@ -60,28 +61,28 @@ contracts/               프론트·백엔드·AI 경계 계약
 docs/                    제품·기술·테스트 기준
 infra/                   로컬 인프라
 scripts/                 반복 개발 작업
-~~~
+```
 
 기본 담당 범위:
 
-| 담당 | 주 작업 영역 |
-|---|---|
-| Frontend | frontend/ |
-| Backend | backend/app/, backend/tests/ |
-| AI | backend/ai/ |
-| Full-stack | contracts/, 통합, 배포, E2E |
+| 담당       | 주 작업 영역                 |
+| ---------- | ---------------------------- |
+| Frontend   | frontend/                    |
+| Backend    | backend/app/, backend/tests/ |
+| AI         | backend/ai/                  |
+| Full-stack | contracts/, 통합, 배포, E2E  |
 
 다른 담당 영역을 수정해야 한다면 변경 이유와 계약 영향을 먼저 공유한다.
 
 ## 4. 의존성 규칙
 
-~~~text
+```text
 frontend → REST API contracts
 backend/app → backend/ai
 backend/app → contracts
 backend/ai → contracts
 backend/ai ✕ backend/app/domains
-~~~
+```
 
 - Frontend는 Backend 내부 모델을 알지 않는다.
 - Backend Router는 Service를 호출하고 계산·DB 로직을 직접 구현하지 않는다.
@@ -112,13 +113,13 @@ backend/ai ✕ backend/app/domains
 
 Intent와 Tool:
 
-| Intent | Tool |
-|---|---|
-| CONTRACT | getContractDetails |
-| SCHEDULE | getUpcomingPayments |
-| FINANCE_SUMMARY | getFinanceSummary |
+| Intent             | Tool                      |
+| ------------------ | ------------------------- |
+| CONTRACT           | getContractDetails        |
+| SCHEDULE           | getUpcomingPayments       |
+| FINANCE_SUMMARY    | getFinanceSummary         |
 | EXPENSE_SIMULATION | simulateAdditionalExpense |
-| UNKNOWN | Tool 없이 지원 범위 안내 |
+| UNKNOWN            | Tool 없이 지원 범위 안내  |
 
 ToolResult 상태:
 
@@ -177,7 +178,7 @@ API·AI 스키마를 변경할 때 다음 순서를 사용한다.
 
 공통 API 오류:
 
-~~~json
+```json
 {
   "error": {
     "code": "VALIDATION_ERROR",
@@ -185,7 +186,7 @@ API·AI 스키마를 변경할 때 다음 순서를 사용한다.
     "details": {}
   }
 }
-~~~
+```
 
 Mock 응답과 실제 응답은 같은 계약을 사용한다.
 
@@ -193,18 +194,18 @@ Mock 응답과 실제 응답은 같은 계약을 사용한다.
 
 ### Frontend 도메인 API
 
-~~~ts
+```ts
 // frontend/src/domains/finance/api/finance-api.ts
 export function getFinanceSummary(): Promise<FinanceSummary> {
   return apiClient<FinanceSummary>("/finance/summary");
 }
-~~~
+```
 
 화면에서 같은 계산을 다시 구현하지 않고 API 결과를 표시한다.
 
 ### Backend 계산 Service
 
-~~~python
+```python
 def calculate_summary(
     available_asset: int,
     confirmed_payments: Iterable[PaymentInput],
@@ -219,45 +220,45 @@ def calculate_summary(
         remaining_expense=remaining_expense,
         expected_balance=available_asset - remaining_expense,
     )
-~~~
+```
 
 ### Router
 
-~~~python
+```python
 @router.post("/simulate", response_model=SimulationResult)
 def simulate(payload: SimulationRequest) -> SimulationResult:
     return finance_service.simulate(payload)
-~~~
+```
 
 Router에 계산식을 작성하지 않는다.
 
 ### AI Tool 요청
 
-~~~python
+```python
 ToolCall(
     tool_name="simulateAdditionalExpense",
     arguments={"name": "가전 비용", "amount": 3_000_000},
 )
-~~~
+```
 
 AI는 Tool 이름과 인자만 반환하고, 실제 계산은 Backend가 수행한다.
 
 ### Backend Tool 실행
 
-~~~python
+```python
 result = tool_registry.execute(
     tool_name=call.tool_name,
     arguments=call.arguments,
     user_id=user_id,
 )
 answer = explain_tool_result(question, result)
-~~~
+```
 
 Tool 실행 전에 사용자 범위와 인자를 검증한다.
 
 ### 단위 테스트
 
-~~~python
+```python
 def test_summary_excludes_paid_payment() -> None:
     summary = calculate_summary(
         30_000_000,
@@ -268,7 +269,7 @@ def test_summary_excludes_paid_payment() -> None:
     )
     assert summary.remaining_expense == 20_000_000
     assert summary.expected_balance == 10_000_000
-~~~
+```
 
 ## 9. 테스트와 완료 조건
 
@@ -304,7 +305,7 @@ AI:
 
 권장 명령:
 
-~~~powershell
+```powershell
 cd frontend
 pnpm format:check
 pnpm lint
@@ -315,7 +316,7 @@ cd ..\backend
 .\.venv\Scripts\python.exe -m pytest
 .\.venv\Scripts\ruff.exe check .
 .\.venv\Scripts\ruff.exe format --check .
-~~~
+```
 
 ## 10. Docker 실행 규칙
 
@@ -328,17 +329,17 @@ cd ..\backend
 
 권장 명령:
 
-~~~powershell
+```powershell
 .\scripts\docker.ps1 up
 .\scripts\docker.ps1 status
 .\scripts\docker.ps1 logs
 .\scripts\docker.ps1 test
 .\scripts\docker.ps1 down
-~~~
+```
 
 ## 11. Git과 변경 단위
 
-- 브랜치는 feature/담당기능 형태를 권장한다.
+- 브랜치, 커밋, PR, 리뷰와 Merge 규칙은 `12_GIT_CONVENTION.md`를 따른다.
 - 커밋은 하나의 목적만 담는다.
 - 생성물, 환경파일, 실제 계약서와 개인정보를 커밋하지 않는다.
 - PR에는 변경 목적, 주요 변경, 테스트 결과, 계약 변경 여부를 작성한다.
