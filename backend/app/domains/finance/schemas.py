@@ -2,13 +2,14 @@ from datetime import date
 
 from pydantic import Field
 
+from app.core.enums import PaymentStatus
 from app.core.schema import ApiModel
 
 
 class PaymentInput(ApiModel):
     amount: int = Field(ge=0)
     due_date: date | None = None
-    status: str
+    status: PaymentStatus
 
 
 class FinanceSummary(ApiModel):
