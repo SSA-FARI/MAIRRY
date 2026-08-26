@@ -7,6 +7,9 @@
 - 금액: 원 단위 정수
 - 날짜: YYYY-MM-DD
 - 데모 사용자는 서버의 DEMO_USER_ID로 식별
+- 외부 JSON 필드는 camelCase, Backend Python 내부 필드는 snake_case를 사용하고 API 경계에서 변환
+- date-time은 timezone을 포함한 ISO 8601 형식
+- 전체 기계 판독 계약은 contracts/openapi.yaml을 기준으로 하며 이 문서는 동작 의미와 예시를 설명
 
 ## 공통 오류
 
@@ -69,11 +72,31 @@
 
 ### POST /api/documents/{documentId}/analyze
 
-응답 200:
+- 분석을 시작하고 202를 반환한다.
+- Frontend는 GET `/api/documents/{documentId}`를 1초 간격으로 조회한다.
+- PROCESSING 상태에서 중복 분석하면 409를 반환한다.
+
+응답 202:
 
 ~~~json
 {
-  "documentId": "uuid",
+  "id": "uuid",
+  "originalName": "contract.pdf",
+  "status": "PROCESSING",
+  "analysisSource": null,
+  "extraction": null,
+  "error": null
+}
+~~~
+
+### GET /api/documents/{documentId}
+
+응답 200: 문서 상태, 분석 결과, 오류 메시지. 분석 성공 예시:
+
+~~~json
+{
+  "id": "uuid",
+  "originalName": "contract.pdf",
   "status": "REVIEW_REQUIRED",
   "analysisSource": "LIVE_AI",
   "extraction": {
@@ -91,13 +114,10 @@
     ],
     "cancellationTerms": [],
     "warnings": []
-  }
+  },
+  "error": null
 }
 ~~~
-
-### GET /api/documents/{documentId}
-
-응답: 문서 상태, 분석 결과, 오류 메시지
 
 ### PUT /api/documents/{documentId}/confirm
 
@@ -127,6 +147,8 @@
 - totalPrice와 payment.amount는 0 이상
 - dueDate는 null 또는 유효한 날짜
 - 확정 요청은 REVIEW_REQUIRED 또는 FAILED 상태에서만 허용
+- PROCESSING 또는 CONFIRMED 상태의 확정 요청은 409
+- Contract, Payment 저장과 Document 상태 변경은 하나의 DB 트랜잭션
 
 응답 200: 생성된 Contract와 Payment
 

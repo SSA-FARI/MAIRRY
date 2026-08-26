@@ -30,6 +30,9 @@ MAIRRY는 예비부부의 결혼 계약서에서 금액·지급일·주요 조�
 
 실제 DB CRUD, 파일 저장, 모델 API 연동, 문서 분석, 전체 UI와 인증은 후속 개발 대상입니다.
 
+구현 우선순위와 완료 게이트는 `docs/10_IMPLEMENTATION_PLAN.md`, 4인 기능별 분담은
+`docs/11_TEAM_OWNERSHIP.md`를 기준으로 합니다.
+
 ## 프로젝트 구조
 
 ~~~text
@@ -67,6 +70,9 @@ MAIRRY/
 
 - Docker Desktop 또는 Docker Engine + Compose v2
 - production override의 !reset 지원을 위해 최신 Docker Compose 권장
+
+Docker Compose가 운영체제와 개발 도구에 관계없는 공통 검증 환경입니다. 로컬 Python·pnpm 직접
+실행은 빠른 개발을 위한 보조 경로이며, 최종 통합 결과는 Compose에서도 동일해야 합니다.
 
 ### 1. 저장소 복제
 

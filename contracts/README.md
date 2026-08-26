@@ -6,5 +6,11 @@
 - tool-result.schema.json: 대화 Tool 공통 결과
 - openapi.yaml: 외부 REST API
 
+외부 JSON 이름은 camelCase를 사용합니다. Python 내부의 snake_case 모델은 API 또는 Provider 경계에서
+alias 변환하며, 계약 파일과 구현 모델을 단순히 같은 이름으로 가정하지 않습니다.
+
+`openapi.yaml`은 경로 목록이 아니라 request body, 정상 응답, 오류 응답, 상태 코드를 포함하는 공개
+계약입니다. 변경 순서는 Engineering Guide의 계약 변경 절차를 따릅니다.
+
 구현 내부 모델을 이 디렉터리에 두지 않습니다. 경계가 변경될 때만 수정합니다.
 

@@ -1,7 +1,8 @@
 openapi: 3.1.0
 info:
   title: MAIRRY API
-  version: 0.1.0
+  version: 0.2.0
+  description: MAIRRY MVP REST contract. JSON fields use camelCase.
 servers:
   - url: http://localhost:8000/api
 paths:
@@ -9,68 +10,292 @@ paths:
     get:
       operationId: getHealth
       responses:
-        "200":
-          description: API health
+        "200": {description: API health, content: {application/json: {schema: {$ref: "#/components/schemas/Health"}}}}
   /wedding-plan:
     get:
       operationId: getWeddingPlan
       responses:
-        "200":
-          description: Current wedding plan
+        "200": {$ref: "#/components/responses/WeddingPlanResponse"}
+        "404": {$ref: "#/components/responses/NotFound"}
     put:
       operationId: upsertWeddingPlan
+      requestBody: {$ref: "#/components/requestBodies/WeddingPlanUpsert"}
       responses:
-        "200":
-          description: Saved wedding plan
+        "200": {$ref: "#/components/responses/WeddingPlanResponse"}
+        "400": {$ref: "#/components/responses/BadRequest"}
   /documents:
     post:
       operationId: uploadDocument
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties: {file: {type: string, format: binary}}
       responses:
-        "201":
-          description: Uploaded document
+        "201": {description: Uploaded, content: {application/json: {schema: {$ref: "#/components/schemas/DocumentUpload"}}}}
+        "413": {$ref: "#/components/responses/PayloadTooLarge"}
+        "415": {$ref: "#/components/responses/UnsupportedMediaType"}
+  /documents/{documentId}:
+    parameters: [{$ref: "#/components/parameters/DocumentId"}]
+    get:
+      operationId: getDocument
+      responses:
+        "200": {description: Current document state, content: {application/json: {schema: {$ref: "#/components/schemas/Document"}}}}
+        "404": {$ref: "#/components/responses/NotFound"}
   /documents/{documentId}/analyze:
+    parameters: [{$ref: "#/components/parameters/DocumentId"}]
     post:
       operationId: analyzeDocument
-      parameters:
-        - in: path
-          name: documentId
-          required: true
-          schema: {type: string, format: uuid}
       responses:
-        "200":
-          description: Extraction result
+        "202": {description: Accepted; poll GET document, content: {application/json: {schema: {$ref: "#/components/schemas/Document"}}}}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "502": {$ref: "#/components/responses/ExternalAiError"}
   /documents/{documentId}/confirm:
+    parameters: [{$ref: "#/components/parameters/DocumentId"}]
     put:
       operationId: confirmDocument
-      parameters:
-        - in: path
-          name: documentId
-          required: true
-          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: "#/components/schemas/ContractConfirm"}}}
       responses:
-        "200":
-          description: Confirmed contract
+        "200": {description: Confirmed contract, content: {application/json: {schema: {$ref: "#/components/schemas/ContractDetail"}}}}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/UnprocessableEntity"}
   /contracts:
     get:
       operationId: listContracts
       responses:
-        "200":
-          description: Contract list
+        "200": {description: Contract list, content: {application/json: {schema: {$ref: "#/components/schemas/ContractList"}}}}
+  /contracts/{contractId}:
+    parameters: [{$ref: "#/components/parameters/ContractId"}]
+    get:
+      operationId: getContract
+      responses:
+        "200": {description: Contract detail, content: {application/json: {schema: {$ref: "#/components/schemas/ContractDetail"}}}}
+        "404": {$ref: "#/components/responses/NotFound"}
   /finance/summary:
     get:
       operationId: getFinanceSummary
       responses:
-        "200":
-          description: Finance summary
+        "200": {description: Finance summary, content: {application/json: {schema: {$ref: "#/components/schemas/FinanceSummary"}}}}
+        "404": {$ref: "#/components/responses/NotFound"}
   /finance/simulate:
     post:
       operationId: simulateAdditionalExpense
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: "#/components/schemas/SimulationRequest"}}}
       responses:
-        "200":
-          description: Simulation result
+        "200": {description: Simulation, content: {application/json: {schema: {$ref: "#/components/schemas/SimulationResult"}}}}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "404": {$ref: "#/components/responses/NotFound"}
   /chat:
     post:
       operationId: chat
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: "#/components/schemas/ChatRequest"}}}
       responses:
-        "200":
-          description: Grounded assistant answer
+        "200": {description: Grounded answer, content: {application/json: {schema: {$ref: "#/components/schemas/ChatResponse"}}}}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "502": {$ref: "#/components/responses/ExternalAiError"}
+components:
+  parameters:
+    DocumentId: {in: path, name: documentId, required: true, schema: {type: string, format: uuid}}
+    ContractId: {in: path, name: contractId, required: true, schema: {type: string, format: uuid}}
+  requestBodies:
+    WeddingPlanUpsert:
+      required: true
+      content: {application/json: {schema: {$ref: "#/components/schemas/WeddingPlanUpsert"}}}
+  responses:
+    WeddingPlanResponse: {description: Wedding plan, content: {application/json: {schema: {$ref: "#/components/schemas/WeddingPlan"}}}}
+    BadRequest: {description: Invalid request, content: {application/json: {schema: {$ref: "#/components/schemas/ErrorResponse"}}}}
+    NotFound: {description: Resource not found, content: {application/json: {schema: {$ref: "#/components/schemas/ErrorResponse"}}}}
+    Conflict: {description: Invalid resource state, content: {application/json: {schema: {$ref: "#/components/schemas/ErrorResponse"}}}}
+    PayloadTooLarge: {description: File too large, content: {application/json: {schema: {$ref: "#/components/schemas/ErrorResponse"}}}}
+    UnsupportedMediaType: {description: Unsupported file type, content: {application/json: {schema: {$ref: "#/components/schemas/ErrorResponse"}}}}
+    UnprocessableEntity: {description: Invalid extraction data, content: {application/json: {schema: {$ref: "#/components/schemas/ErrorResponse"}}}}
+    ExternalAiError: {description: AI failed and fallback unavailable, content: {application/json: {schema: {$ref: "#/components/schemas/ErrorResponse"}}}}
+  schemas:
+    Health:
+      type: object
+      required: [status]
+      properties: {status: {type: string, const: ok}}
+      additionalProperties: false
+    WeddingPlanUpsert:
+      type: object
+      required: [weddingDate, availableAsset]
+      properties: {weddingDate: {type: string, format: date}, availableAsset: {type: integer, minimum: 0}}
+      additionalProperties: false
+    WeddingPlan:
+      allOf:
+        - $ref: "#/components/schemas/WeddingPlanUpsert"
+        - type: object
+          required: [id]
+          properties: {id: {type: string, format: uuid}}
+    DocumentStatus: {type: string, enum: [UPLOADED, PROCESSING, REVIEW_REQUIRED, FAILED, CONFIRMED]}
+    DocumentUpload:
+      type: object
+      required: [id, originalName, status]
+      properties:
+        id: {type: string, format: uuid}
+        originalName: {type: string}
+        status: {$ref: "#/components/schemas/DocumentStatus"}
+      additionalProperties: false
+    Document:
+      type: object
+      required: [id, originalName, status, analysisSource, extraction, error]
+      properties:
+        id: {type: string, format: uuid}
+        originalName: {type: string}
+        status: {$ref: "#/components/schemas/DocumentStatus"}
+        analysisSource: {type: [string, "null"], enum: [LIVE_AI, DEMO_FALLBACK, null]}
+        extraction: {oneOf: [{$ref: "#/components/schemas/DocumentExtraction"}, {type: "null"}]}
+        error: {oneOf: [{$ref: "#/components/schemas/ErrorBody"}, {type: "null"}]}
+      additionalProperties: false
+    DocumentType: {type: string, enum: [WEDDING_HALL, UNKNOWN]}
+    PaymentStatus: {type: string, enum: [PAID, UNPAID, UNKNOWN]}
+    Payment:
+      type: object
+      required: [name, amount, dueDate, status, sourceText]
+      properties:
+        name: {type: string, minLength: 1}
+        amount: {type: [integer, "null"], minimum: 0}
+        dueDate: {type: [string, "null"], format: date}
+        status: {$ref: "#/components/schemas/PaymentStatus"}
+        sourceText: {type: string}
+      additionalProperties: false
+    CancellationTerm:
+      type: object
+      required: [summary, sourceText]
+      properties: {summary: {type: string}, sourceText: {type: string}}
+      additionalProperties: false
+    DocumentExtraction:
+      type: object
+      required: [documentType, company, totalPrice, payments, cancellationTerms, warnings]
+      properties:
+        documentType: {$ref: "#/components/schemas/DocumentType"}
+        company: {type: [string, "null"]}
+        totalPrice: {type: [integer, "null"], minimum: 0}
+        payments: {type: array, items: {$ref: "#/components/schemas/Payment"}}
+        cancellationTerms: {type: array, items: {$ref: "#/components/schemas/CancellationTerm"}}
+        warnings: {type: array, items: {type: string}}
+      additionalProperties: false
+    ContractConfirm:
+      type: object
+      required: [documentType, company, totalPrice, payments, cancellationTerms]
+      properties:
+        documentType: {$ref: "#/components/schemas/DocumentType"}
+        company: {type: string, minLength: 1}
+        totalPrice: {type: integer, minimum: 0}
+        payments: {type: array, items: {$ref: "#/components/schemas/Payment"}}
+        cancellationTerms: {type: array, items: {$ref: "#/components/schemas/CancellationTerm"}}
+      additionalProperties: false
+    UpcomingPayment:
+      type: object
+      required: [contractId, company, name, amount, dueDate]
+      properties:
+        contractId: {type: string, format: uuid}
+        company: {type: string}
+        name: {type: string}
+        amount: {type: integer, minimum: 0}
+        dueDate: {type: string, format: date}
+      additionalProperties: false
+    ContractSummary:
+      type: object
+      required: [id, company, totalPrice, status, nextPayment]
+      properties:
+        id: {type: string, format: uuid}
+        company: {type: string}
+        totalPrice: {type: integer, minimum: 0}
+        status: {type: string, const: CONFIRMED}
+        nextPayment: {oneOf: [{$ref: "#/components/schemas/UpcomingPayment"}, {type: "null"}]}
+      additionalProperties: false
+    ContractList:
+      type: object
+      required: [items]
+      properties: {items: {type: array, items: {$ref: "#/components/schemas/ContractSummary"}}}
+      additionalProperties: false
+    ContractDetail:
+      type: object
+      required: [id, documentId, documentType, company, totalPrice, status, payments, cancellationTerms]
+      properties:
+        id: {type: string, format: uuid}
+        documentId: {type: string, format: uuid}
+        documentType: {$ref: "#/components/schemas/DocumentType"}
+        company: {type: string}
+        totalPrice: {type: integer, minimum: 0}
+        status: {type: string, const: CONFIRMED}
+        payments: {type: array, items: {$ref: "#/components/schemas/Payment"}}
+        cancellationTerms: {type: array, items: {$ref: "#/components/schemas/CancellationTerm"}}
+      additionalProperties: false
+    FinanceSummary:
+      type: object
+      required: [availableAsset, remainingExpense, expectedBalance, nearestPayment, timeline]
+      properties:
+        availableAsset: {type: integer, minimum: 0}
+        remainingExpense: {type: integer, minimum: 0}
+        expectedBalance: {type: integer}
+        nearestPayment: {oneOf: [{$ref: "#/components/schemas/UpcomingPayment"}, {type: "null"}]}
+        timeline: {type: array, items: {$ref: "#/components/schemas/UpcomingPayment"}}
+      additionalProperties: false
+    SimulationRequest:
+      type: object
+      required: [name, amount]
+      properties: {name: {type: string, minLength: 1}, amount: {type: integer, minimum: 1}}
+      additionalProperties: false
+    SimulationResult:
+      type: object
+      required: [currentExpectedBalance, simulatedExpectedBalance, shortageAmount]
+      properties:
+        currentExpectedBalance: {type: integer}
+        simulatedExpectedBalance: {type: integer}
+        shortageAmount: {type: integer, minimum: 0}
+      additionalProperties: false
+    ChatRequest:
+      type: object
+      required: [message]
+      properties: {message: {type: string, minLength: 1, maxLength: 2000}}
+      additionalProperties: false
+    Citation:
+      type: object
+      required: [contractId, label, sourceText]
+      properties: {contractId: {type: string, format: uuid}, label: {type: string}, sourceText: {type: string}}
+      additionalProperties: false
+    Calculation:
+      type: object
+      required: [toolName, calculatedAt]
+      properties:
+        toolName: {type: string}
+        currentExpectedBalance: {type: integer}
+        simulatedExpectedBalance: {type: integer}
+        shortageAmount: {type: integer, minimum: 0}
+        availableAsset: {type: integer, minimum: 0}
+        remainingExpense: {type: integer, minimum: 0}
+        expectedBalance: {type: integer}
+        calculatedAt: {type: string, format: date-time}
+      additionalProperties: false
+    ChatResponse:
+      type: object
+      required: [answer, answerType, citations, calculation]
+      properties:
+        answer: {type: string}
+        answerType: {type: string, enum: [CONTRACT, CALCULATION, NOT_FOUND]}
+        citations: {type: array, items: {$ref: "#/components/schemas/Citation"}}
+        calculation: {oneOf: [{$ref: "#/components/schemas/Calculation"}, {type: "null"}]}
+      additionalProperties: false
+    ErrorBody:
+      type: object
+      required: [code, message, details]
+      properties: {code: {type: string}, message: {type: string}, details: {type: object}}
+      additionalProperties: false
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties: {error: {$ref: "#/components/schemas/ErrorBody"}}
+      additionalProperties: false
