@@ -75,11 +75,13 @@ async def http_error_handler(_request: Request, exc: StarletteHTTPException) -> 
 
 
 async def unexpected_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    sanitized_exception = RuntimeError("unexpected error details redacted")
     logger.error(
         "Unhandled API error: method=%s path=%s errorType=%s",
         request.method,
         request.url.path,
         type(exc).__name__,
+        exc_info=(RuntimeError, sanitized_exception, exc.__traceback__),
     )
     return _response(
         status.HTTP_500_INTERNAL_SERVER_ERROR,

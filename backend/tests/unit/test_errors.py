@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -19,7 +21,8 @@ def create_test_app() -> FastAPI:
 
     @app.get("/unexpected-error")
     def raise_unexpected_error() -> None:
-        raise RuntimeError("sensitive internal message")
+        sensitive_message = "sensitive internal message"
+        raise RuntimeError(sensitive_message)
 
     return app
 
@@ -39,11 +42,19 @@ def test_app_error_is_serialized_with_common_shape() -> None:
     }
 
 
-def test_unexpected_error_does_not_expose_internal_message() -> None:
+def test_unexpected_error_keeps_sanitized_traceback_without_internal_message(caplog) -> None:
     client = TestClient(create_test_app(), raise_server_exceptions=False)
 
-    response = client.get("/unexpected-error")
+    with caplog.at_level(logging.ERROR, logger="app.core.errors"):
+        response = client.get("/unexpected-error")
 
     assert response.status_code == 500
     assert response.json()["error"]["code"] == "INTERNAL_ERROR"
     assert "sensitive internal message" not in response.text
+    assert len(caplog.records) == 1
+    record = caplog.records[0]
+    assert record.exc_info is not None
+    assert record.exc_info[2] is not None
+    assert "raise_unexpected_error" in caplog.text
+    assert "sensitive internal message" not in caplog.text
+    assert "unexpected error details redacted" in caplog.text
