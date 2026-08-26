@@ -3,6 +3,10 @@ const REVIEW_COMMENT_AUTHOR = "github-actions[bot]";
 const MAX_REVIEW_LENGTH = 60_000;
 const GITHUB_API = "https://api.github.com";
 const GEMINI_API = "https://generativelanguage.googleapis.com/v1beta/interactions";
+const GEMINI_MAX_RETRIES = 3;
+const GEMINI_MAX_ATTEMPTS = GEMINI_MAX_RETRIES + 1;
+const GEMINI_RETRY_BASE_DELAY_MS = 1_000;
+const GEMINI_RETRY_MAX_DELAY_MS = 15_000;
 
 const requiredEnvironment = ["GEMINI_API_KEY", "GITHUB_TOKEN", "GITHUB_REPOSITORY", "PR_NUMBER"];
 
@@ -99,8 +103,47 @@ ${diff}
 </pull_request_diff>`;
 }
 
+function isRetryableGeminiStatus(status) {
+  return [429, 500, 502, 503].includes(status);
+}
+
+function retryAfterDelayMs(response) {
+  const retryAfter = response.headers.get("retry-after");
+  if (!retryAfter) {
+    return null;
+  }
+
+  const seconds = Number(retryAfter);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return seconds * 1_000;
+  }
+
+  const retryAt = Date.parse(retryAfter);
+  return Number.isNaN(retryAt) ? null : Math.max(0, retryAt - Date.now());
+}
+
+function geminiRetryDelayMs(response, attempt) {
+  const retryAfter = response ? retryAfterDelayMs(response) : null;
+  if (retryAfter !== null) {
+    return Math.min(retryAfter, GEMINI_RETRY_MAX_DELAY_MS);
+  }
+
+  const exponentialDelay = Math.min(
+    GEMINI_RETRY_BASE_DELAY_MS * 2 ** (attempt - 1),
+    GEMINI_RETRY_MAX_DELAY_MS,
+  );
+  return Math.min(
+    Math.round(exponentialDelay * (0.75 + Math.random() * 0.5)),
+    GEMINI_RETRY_MAX_DELAY_MS,
+  );
+}
+
+function sleep(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
 async function reviewWithGemini(diff) {
-  const response = await fetch(GEMINI_API, {
+  const request = {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -113,19 +156,55 @@ async function reviewWithGemini(diff) {
         thinking_level: "medium",
       },
     }),
-  });
+  };
 
-  if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`Gemini API ${response.status}: ${detail.slice(0, 500)}`);
+  for (let attempt = 1; attempt <= GEMINI_MAX_ATTEMPTS; attempt += 1) {
+    let response;
+    try {
+      response = await fetch(GEMINI_API, request);
+    } catch (error) {
+      if (attempt === GEMINI_MAX_ATTEMPTS) {
+        throw new Error(
+          `Gemini API network error after ${GEMINI_MAX_ATTEMPTS} attempts: ${error.message}`,
+          { cause: error },
+        );
+      }
+
+      const delayMs = geminiRetryDelayMs(null, attempt);
+      console.warn(
+        `Gemini API network error (attempt ${attempt}/${GEMINI_MAX_ATTEMPTS}); ` +
+          `retrying in ${delayMs}ms: ${error.message}`,
+      );
+      await sleep(delayMs);
+      continue;
+    }
+
+    if (response.ok) {
+      const interaction = await response.json();
+      const review = interaction.output_text?.trim();
+      if (!review) {
+        throw new Error("Gemini returned an empty review");
+      }
+      return review;
+    }
+
+    const detail = (await response.text()).slice(0, 500);
+    if (!isRetryableGeminiStatus(response.status) || attempt === GEMINI_MAX_ATTEMPTS) {
+      const attemptSummary = isRetryableGeminiStatus(response.status)
+        ? ` after ${GEMINI_MAX_ATTEMPTS} attempts`
+        : "";
+      throw new Error(`Gemini API ${response.status}${attemptSummary}: ${detail}`);
+    }
+
+    const delayMs = geminiRetryDelayMs(response, attempt);
+    console.warn(
+      `Gemini API ${response.status} (attempt ${attempt}/${GEMINI_MAX_ATTEMPTS}); ` +
+        `retrying in ${delayMs}ms: ${detail}`,
+    );
+    await sleep(delayMs);
   }
 
-  const interaction = await response.json();
-  const review = interaction.output_text?.trim();
-  if (!review) {
-    throw new Error("Gemini returned an empty review");
-  }
-  return review;
+  throw new Error("Gemini API retry loop ended unexpectedly");
 }
 
 async function findExistingReviewComment() {
@@ -176,6 +255,35 @@ const diff = await fetchPullRequestDiff();
 if (!diff.trim()) {
   await upsertReviewComment("## Critical\n없음\n\n## Major\n없음\n\n## Minor\n없음");
 } else {
-  const review = await reviewWithGemini(diff);
-  await upsertReviewComment(review);
+  await upsertReviewComment(
+    "_Gemini가 PR diff를 검토하고 있습니다. 완료되면 이 댓글이 자동으로 갱신됩니다._",
+  );
+
+  try {
+    const review = await reviewWithGemini(diff);
+    await upsertReviewComment(review);
+  } catch (error) {
+    const runUrl = process.env.GITHUB_RUN_ID
+      ? `https://github.com/${repository}/actions/runs/${process.env.GITHUB_RUN_ID}`
+      : null;
+    const runLink = runUrl ? ` [Actions 실행 로그](${runUrl})를 확인해 주세요.` : "";
+
+    try {
+      await upsertReviewComment(
+        "⚠️ Gemini API의 일시적인 오류로 자동 리뷰를 생성하지 못했습니다." +
+          `${runLink} PR 코드에 문제가 있다는 의미는 아니며, 워크플로를 재실행하면 이 댓글이 갱신됩니다.`,
+      );
+    } catch (commentError) {
+      throw new AggregateError(
+        [error, commentError],
+        "Gemini review and failure-status comment both failed",
+      );
+    }
+
+    console.warn(
+      `Gemini review failed after ${GEMINI_MAX_RETRIES} retries; ` +
+        "the workflow will remain non-blocking.",
+      error,
+    );
+  }
 }
