@@ -142,6 +142,20 @@ function sleep(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+function extractInteractionText(interaction) {
+  if (!Array.isArray(interaction.steps)) {
+    return "";
+  }
+
+  return interaction.steps
+    .filter((step) => step?.type === "model_output" && Array.isArray(step.content))
+    .flatMap((step) => step.content)
+    .filter((content) => content?.type === "text" && typeof content.text === "string")
+    .map((content) => content.text)
+    .join("\n")
+    .trim();
+}
+
 async function reviewWithGemini(diff) {
   const request = {
     method: "POST",
@@ -181,9 +195,15 @@ async function reviewWithGemini(diff) {
 
     if (response.ok) {
       const interaction = await response.json();
-      const review = interaction.output_text?.trim();
+      const review = extractInteractionText(interaction);
       if (!review) {
-        throw new Error("Gemini returned an empty review");
+        const stepTypes = Array.isArray(interaction.steps)
+          ? interaction.steps.map((step) => step?.type ?? "unknown").join(", ")
+          : "missing";
+        throw new Error(
+          `Gemini returned no text model output (status: ${interaction.status ?? "unknown"}, ` +
+            `steps: ${stepTypes})`,
+        );
       }
       return review;
     }
