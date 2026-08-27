@@ -23,14 +23,17 @@ Phase 1 병렬 개발 전에 A/B/C/D가 공유해야 하는 데이터 타입과 
 
 ## 계약과 금융
 
-- Payment amount가 null인 추출값은 확정할 수 있지만 금융 계산에서 제외하고 확인 필요로 표시한다.
-- Payment가 없는 계약도 확정할 수 있다.
+- Payment amount가 null인 AI 추출값은 검수 화면에서 확인 필요로 표시한다. 계약 확정 전 사용자가
+  0 이상의 정수 금액을 입력해야 하며 null 상태로는 확정할 수 없다.
+- MVP의 WEDDING_HALL 계약은 Payment가 1개 이상이어야 확정할 수 있다.
 - Payment 합계와 totalPrice가 달라도 확정을 막지 않고 warning으로 안내한다.
-- CONFIRMED 계약의 amount가 있는 UNPAID Payment만 남은 지출에 포함한다.
+- CONFIRMED 계약의 UNPAID Payment만 남은 지출에 포함한다. 확정 Payment의 amount는 항상 존재한다.
 - 과거 UNPAID 항목도 남은 지출에는 포함한다.
 - nearestPayment는 기준일 이후 dueDate가 있는 가장 이른 UNPAID 항목이다.
 - 시뮬레이션은 저장하지 않으며 원본 계획과 Payment를 변경하지 않는다.
 - 확정 계약 수정·삭제와 Payment 상태 변경 API는 MVP 공개 범위에서 제외한다.
+- 공개 API와 Backend 도메인에서는 `Contract`를 사용하고 DB 테이블은 `contracts`로 통일한다.
+- Contract는 확정 원본 Document 한 건을 `document_id` UNIQUE로 참조한다.
 
 ## 문서와 분석
 
@@ -41,6 +44,10 @@ Phase 1 병렬 개발 전에 A/B/C/D가 공유해야 하는 데이터 타입과 
 - 자동 재시도는 하지 않으며 FAILED 문서는 사용자가 재시도할 수 있다.
 - 오래된 PROCESSING 복구는 Phase 1 Document Service에서 실패 상태 전환 정책으로 구현한다.
 - 원문은 공개 URL로 제공하지 않고 5분 유효 Presigned URL을 사용한다.
+- FAILED 문서의 직접 입력 확정은 빈 검수 폼에서 시작하며 AI extraction 없이 사용자가 입력한
+  값만 저장한다. Document의 실패 정보와 원본은 보존한다.
+- 직접 입력한 Payment와 CancellationTerm은 `sourceText=null`을 사용한다. AI 추출 근거가 있는
+  값은 sourceText를 보존하며 임의의 근거 문장을 생성하지 않는다.
 
 ## DB와 트랜잭션
 
