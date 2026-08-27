@@ -38,7 +38,10 @@ class DocumentUploadService:
             file_url=file_url,
             content_type=content_type,
         )
-        return self._repository.create(db, document)
+        created = self._repository.create(db, document)
+        db.commit()
+        db.refresh(created)
+        return created
 
 
 def get_document_upload_service() -> DocumentUploadService:

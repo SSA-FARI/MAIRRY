@@ -55,7 +55,7 @@ async def read_upload_within_limit(file: UploadFile, max_size_bytes: int) -> byt
         if len(buffer) > max_size_bytes:
             raise AppError(
                 code=ErrorCode.FILE_TOO_LARGE,
-                message=f"파일 용량은 {max_size_bytes // (1024 * 1024)}MB 이하여야 합니다.",
+                message=f"파일 용량은 {max_size_bytes / (1024 * 1024):.1f}MB 이하여야 합니다.",
                 status_code=413,
                 details={"maxSizeBytes": max_size_bytes},
             )
