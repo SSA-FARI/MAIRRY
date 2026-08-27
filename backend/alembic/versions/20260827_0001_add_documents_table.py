@@ -43,20 +43,10 @@ def upgrade() -> None:
     op.create_table(
         "documents",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
-        # wedding_plans / wedding_plan_members는 A 담당 마이그레이션에서 추가된다.
-        # 마이그레이션 head를 머지할 때 이 FK보다 먼저 적용되도록 순서를 맞춘다.
-        sa.Column(
-            "wedding_plan_id",
-            postgresql.UUID(as_uuid=True),
-            sa.ForeignKey("wedding_plans.id"),
-            nullable=False,
-        ),
-        sa.Column(
-            "uploaded_by_member_id",
-            postgresql.UUID(as_uuid=True),
-            sa.ForeignKey("wedding_plan_members.id"),
-            nullable=False,
-        ),
+        # TODO: wedding_plans / wedding_plan_members(A 담당)가 main에 merge되면
+        # 별도 마이그레이션에서 이 두 컬럼에 FK 제약을 추가한다.
+        sa.Column("wedding_plan_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("uploaded_by_member_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("document_type", sa.String(length=50), nullable=True),
         sa.Column("original_filename", sa.String(length=255), nullable=False),
         sa.Column("file_url", sa.Text(), nullable=False),
