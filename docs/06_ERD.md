@@ -326,6 +326,9 @@ AI 추출 결과의 `amount`는 NULL일 수 있지만 Contract의 Payment로 저
 정수 금액을 입력해야 한다. NULL 금액은 검수 화면에서 확인 필요로 표시하고 확정을 차단한다.
 값을 추측하거나 `total_price`에서 역산하지 않는다.
 
+AI 추출 근거가 있는 Payment는 `source_text`를 보존한다. FAILED 문서의 직접입력처럼 AI 근거가
+없는 Payment는 `source_text = NULL`로 저장하며 빈 근거를 생성하지 않는다.
+
 이 테이블을 기준으로 **Wedding Financial Timeline**을 만들 수 있다.
 
 ```
@@ -381,6 +384,7 @@ source_text
 ### 특징
 
 `contracts.cancellation_policy`처럼 하나의 TEXT 필드에 모든 조건을 넣지 않는다.
+FAILED 문서에서 사용자가 직접 입력한 조건은 AI 근거가 없으므로 `source_text = NULL`을 허용한다.
 
 따라서 향후:
 

@@ -180,12 +180,19 @@ components:
         amount: {type: integer, minimum: 0}
         dueDate: {type: [string, "null"], format: date}
         status: {$ref: "#/components/schemas/PaymentStatus"}
-        sourceText: {type: string}
+        sourceText: {type: [string, "null"]}
       additionalProperties: false
     CancellationTerm:
       type: object
       required: [summary, sourceText]
       properties: {summary: {type: string}, sourceText: {type: string}}
+      additionalProperties: false
+    ConfirmedCancellationTerm:
+      type: object
+      required: [summary, sourceText]
+      properties:
+        summary: {type: string, minLength: 1}
+        sourceText: {type: [string, "null"]}
       additionalProperties: false
     DocumentExtraction:
       type: object
@@ -206,7 +213,7 @@ components:
         company: {type: string, minLength: 1}
         totalPrice: {type: integer, minimum: 0}
         payments: {type: array, minItems: 1, items: {$ref: "#/components/schemas/ConfirmedPayment"}}
-        cancellationTerms: {type: array, items: {$ref: "#/components/schemas/CancellationTerm"}}
+        cancellationTerms: {type: array, items: {$ref: "#/components/schemas/ConfirmedCancellationTerm"}}
       additionalProperties: false
     UpcomingPayment:
       type: object
@@ -244,7 +251,7 @@ components:
         totalPrice: {type: integer, minimum: 0}
         status: {type: string, const: CONFIRMED}
         payments: {type: array, minItems: 1, items: {$ref: "#/components/schemas/ConfirmedPayment"}}
-        cancellationTerms: {type: array, items: {$ref: "#/components/schemas/CancellationTerm"}}
+        cancellationTerms: {type: array, items: {$ref: "#/components/schemas/ConfirmedCancellationTerm"}}
       additionalProperties: false
     FinanceSummary:
       type: object

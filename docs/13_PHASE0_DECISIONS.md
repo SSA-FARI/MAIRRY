@@ -46,6 +46,8 @@ Phase 1 병렬 개발 전에 A/B/C/D가 공유해야 하는 데이터 타입과 
 - 원문은 공개 URL로 제공하지 않고 5분 유효 Presigned URL을 사용한다.
 - FAILED 문서의 직접 입력 확정은 빈 검수 폼에서 시작하며 AI extraction 없이 사용자가 입력한
   값만 저장한다. Document의 실패 정보와 원본은 보존한다.
+- 직접 입력한 Payment와 CancellationTerm은 `sourceText=null`을 사용한다. AI 추출 근거가 있는
+  값은 sourceText를 보존하며 임의의 근거 문장을 생성하지 않는다.
 
 ## DB와 트랜잭션
 

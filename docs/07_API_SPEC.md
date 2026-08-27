@@ -212,11 +212,13 @@ UPLOADED 또는 FAILED 문서를 PROCESSING으로 바꾸고 분석을 시작한�
 - WEDDING_HALL 확정 요청은 payment가 1개 이상이어야 함
 - 확정 요청의 payment.amount는 0 이상 정수이며 null은 허용하지 않음
 - dueDate는 null 또는 유효한 날짜
+- AI 근거가 있는 sourceText는 원문을 보존하고, FAILED 직접입력처럼 근거가 없으면 null을 사용
 - cancellationTerms는 빈 배열 가능
 
 AI 추출 결과에서는 payment.amount가 null일 수 있지만 확정 요청에서는 사용자가 금액을 입력해야
 한다. amount가 null이거나 payments가 비어 있으면 422로 확정을 차단한다. dueDate는 null이어도
-금융 합계를 계산할 수 있으므로 확정을 허용한다.
+금융 합계를 계산할 수 있으므로 확정을 허용한다. sourceText는 필드 자체를 생략하지 않고 AI
+근거가 없는 수동 입력에서는 null로 전송한다.
 
 응답 200은 Contract 상세 형식이다. 오류: 문서/계획 없음 404, 잘못된 상태/중복 확정 409,
 필수값이나 구조 오류 422.
@@ -415,6 +417,6 @@ name은 공백이 아니고 amount는 0보다 큰 정수다. 현재/시뮬레이
 | 계획 | PLAN-01~02 |
 | 업로드 | DOC-01~03 |
 | 분석 | AI-01~03 |
-| 확정 | REVIEW-01~05 |
+| 확정 | REVIEW-01~06 |
 | 금융 | FIN-01~04 |
 | 대화/Tool | CHAT-01~10 |
