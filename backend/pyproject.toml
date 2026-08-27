@@ -35,5 +35,18 @@ markers = ["integration: requires external infrastructure such as PostgreSQL"]
 line-length = 100
 target-version = "py312"
 
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = [
+  "fastapi.Depends",
+  "fastapi.Query",
+  "fastapi.Path",
+  "fastapi.Body",
+  "fastapi.Header",
+  "fastapi.Cookie",
+  "fastapi.File",
+  "fastapi.Form",
+  "fastapi.Security",
+]
+
 [tool.setuptools.packages.find]
 include = ["app*", "ai*"]
