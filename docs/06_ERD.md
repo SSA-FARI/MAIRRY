@@ -643,6 +643,13 @@ Document 연결 및 CONFIRMED 변경
 ~~~
 위 과정은 하나의 트랜잭션으로 처리하며, 검증 또는 저장 중 하나라도 실패하면 전체 롤백한다.
 
+### Payment 수정 정합성
+
+- `CONFIRMED` 상태의 SpendingItem에 연결된 Payment를 추가·수정·삭제할 때도 금액 정합성을 검증한다.
+- 변경 후 `SUM(payments.amount) = spending_items.total_amount`를 만족해야 한다.
+- 불일치하면 변경을 저장하지 않고 트랜잭션을 롤백한다.
+- `total_amount`는 Payment 변경에 따라 자동 수정하지 않는다.
+
 ## 인덱스 및 UNIQUE
 
 - WEDDING_PLAN_MEMBERS(wedding_plan_id, user_id) UNIQUE
