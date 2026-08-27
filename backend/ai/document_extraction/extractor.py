@@ -29,7 +29,11 @@ async def analyze_document(
     else:
         try:
             payload = await provider.extract_document(file_path)
-        except Exception:  # noqa: BLE001 - provider boundary normalizes third-party failures
+        except Exception as exc:  # noqa: BLE001 - provider boundary normalizes SDK failures
+            logger.warning(
+                "AI provider request failed: errorType=%s",
+                type(exc).__name__,
+            )
             provider_error = AiProviderError("AI provider request failed")
         else:
             try:

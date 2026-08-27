@@ -138,3 +138,18 @@ def test_fallback_lookup_runs_outside_event_loop_thread() -> None:
 
     assert registry.worker_thread_id is not None
     assert registry.worker_thread_id != event_loop_thread_id
+
+
+def test_provider_failure_log_keeps_only_safe_error_type(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    result = asyncio.run(
+        analyze_document(
+            DEFAULT_DEMO_DOCUMENT_PATH,
+            UnexpectedFailureProvider(),
+        )
+    )
+
+    assert result.analysis_source == "DEMO_FALLBACK"
+    assert "errorType=ConnectionResetError" in caplog.text
+    assert "network details" not in caplog.text
