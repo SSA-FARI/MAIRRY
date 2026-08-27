@@ -572,6 +572,20 @@ CancellationTerm
 - due_date = NULL이어도 금액이 확정되면 지출 합계에는 포함하고, 타임라인에서는 지급일 확인 필요로 표시한다.
 - AI 장애 대응이 필요하면 analysis_source = LIVE_AI / DEMO_FALLBACK으로 구분한다.
 
+### 금융 계산 기준
+
+- 금융 요약의 Single Source of Truth는 확정된 Contract에 속한 Payment다.
+- `remaining_expense`는 `amount`가 있는 UNPAID Payment의 합계로 계산한다.
+- `expected_balance`는 `available_asset - remaining_expense`로 계산한다.
+- `contract.total_price`는 계약서상 총액을 표시하기 위한 값이며 금융 잔액 계산에 직접 사용하지
+  않는다.
+- Payment의 `amount`가 NULL이면 `contract.total_price`에서 역산하거나 대체하지 않고 계산에서
+  제외한다.
+- `total_price`와 Payment 합계가 달라도 두 값을 자동 보정하지 않고 검수 화면에서 warning으로
+  안내한다.
+- 계약 총액과 지급 일정 합계는 의미가 다른 값이므로 UI에서 동일한 금융 지표처럼 표시하지
+  않는다.
+
 확정 처리
 ~~~text
 사용자 확정
