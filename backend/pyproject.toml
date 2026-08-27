@@ -37,3 +37,6 @@ target-version = "py312"
 
 [tool.setuptools.packages.find]
 include = ["app*", "ai*"]
+
+[tool.setuptools.package-data]
+"ai.document_extraction" = ["fallback_assets/*.fixture", "fallback_assets/*.json"]
