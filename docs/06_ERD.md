@@ -8,9 +8,9 @@
 | `wedding_plans` | 두 사람이 공유하는 결혼 준비 공간 |
 | `wedding_plan_members` | 사용자와 WeddingPlan 연결 |
 | `assets` | 결혼 준비에 사용할 자금 |
-| `spending_items` | 웨딩홀·스드메 등 하나의 지출 단위 |
+| `contracts` | 사용자가 검수·확정한 계약 단위 |
 | `payments` | 계약금·중도금·잔금 등 실제 지급 일정 |
-| `spending_terms` | 취소·환불·보증인원 등 계약조건 |
+| `cancellation_terms` | 취소·환불 등 계약조건과 근거 |
 | `documents` | 원본 계약서/견적서와 AI 분석 결과 |
 | `document_chunks` | 계약서 RAG 검색용 데이터 |
 
@@ -231,11 +231,11 @@ CHECK (
 
 ---
 
-## spending_items
+## contracts
 
 ### 역할
 
-WeddingPlan에서 발생하는 **하나의 결혼 관련 지출**을 표현한다.
+AI 추출값을 사용자가 검수한 뒤 확정한 **하나의 계약**을 표현한다.
 
 이 테이블이 결혼비용 관리의 핵심이다.
 
@@ -243,68 +243,37 @@ WeddingPlan에서 발생하는 **하나의 결혼 관련 지출**을 표현한�
 
 ```
 WeddingPlan
- ├─ 웨딩홀
- ├─ 스드메
- ├─ 신혼여행
- ├─ 가전
- ├─ 가구
- └─ 신혼집
+ ├─ 웨딩홀 계약
+ └─ 향후 스드메 계약
 ```
 
 ### 테이블 명세
 
 | 컬럼 | 타입 | NULL | 제약조건 | 설명 |
 | --- | --- | --- | --- | --- |
-| `id` | UUID | X | PK | 지출 항목 식별자 |
+| `id` | UUID | X | PK | 계약 식별자 |
 | `wedding_plan_id` | UUID | X | FK | WeddingPlan |
-| `category` | VARCHAR(50) | X | - | 지출 카테고리 |
-| `title` | VARCHAR(200) | O | - | 사용자에게 보여줄 제목 |
-| `vendor_name` | VARCHAR(200) | O | - | 업체명 |
-| `source_type` | ENUM | X | - | 데이터 발생 출처 |
-| `total_amount` | BIGINT | O | CHECK >= 0 | 총 지출 금액 |
-| `status` | ENUM | X | DEFAULT DRAFT | 지출 상태 |
+| `document_id` | UUID | X | FK, UNIQUE | 확정 원본 Document |
+| `document_type` | VARCHAR(50) | X | - | 문서 종류, MVP는 WEDDING_HALL |
+| `company` | VARCHAR(200) | X | - | 업체명 |
+| `total_price` | BIGINT | X | CHECK >= 0 | 계약 총액 |
+| `status` | ENUM | X | DEFAULT CONFIRMED | 계약 상태 |
 | `confirmed_by_member_id` | UUID | O | FK | AI 결과 검수 사용자 |
-| `confirmed_at` | TIMESTAMPTZ | O | - | 확정일 |
+| `confirmed_at` | TIMESTAMPTZ | X | - | 확정일 |
 | `created_at` | TIMESTAMPTZ | X | DEFAULT now() | 생성일 |
 | `updated_at` | TIMESTAMPTZ | X | DEFAULT now() | 수정일 |
-
-### `category`
-
-MVP에서는 실제로 `WEDDING_HALL`만 사용하더라도 다음 확장을 고려할 수 있다.
-
-```
-WEDDING_HALL
-SDM
-HONEYMOON
-HOUSING
-APPLIANCE
-FURNITURE
-OTHER
-```
-
-### `source_type`
-
-| 값 | 설명 |
-| --- | --- |
-| `CONTRACT` | 계약서에서 생성 |
-| `QUOTE` | 견적서에서 생성 |
-| `RESERVATION` | 예약내역에서 생성 |
-| `MANUAL` | 사용자 직접 입력 |
 
 #### `status`
 
 | 값 | 설명 |
 | --- | --- |
-| `DRAFT` | 직접 입력 등 임시 지출 정보 |
 | `CONFIRMED` | 사용자 검수 완료 |
-| `COMPLETED` | 지출 완료 |
-| `CANCELLED` | 취소 |
 
 ### 특징
 
-계약서가 없는 가전 견적, 여행 예약, 직접 입력 비용까지 동일한 구조로 확장할 수 있다.
-
-검수자는 반드시 해당 지출과 동일한 WeddingPlan 소속이어야 하며, 이 일치 여부는 서비스 레이어에서 검증한다.
+MVP에서는 확정 생성과 목록·상세 조회만 제공한다. 계약 수정·삭제와 Payment 상태 변경 API는
+제공하지 않는다. 검수자는 반드시 해당 계약과 동일한 WeddingPlan 소속이어야 하며, 이 일치
+여부는 서비스 레이어에서 검증한다.
 
 ---
 
@@ -312,7 +281,7 @@ OTHER
 
 #### 역할
 
-하나의 SpendingItem에서 발생하는 **실제 지급 일정**을 저장한다.
+하나의 Contract에서 발생하는 **실제 지급 일정**을 저장한다.
 
 예를 들어 웨딩홀 총비용이 2,300만 원이라면:
 
@@ -334,14 +303,12 @@ OTHER
 | 컬럼 | 타입 | NULL | 제약조건 | 설명 |
 | --- | --- | --- | --- | --- |
 | `id` | UUID | X | PK | 지급항목 식별자 |
-| `spending_item_id` | UUID | X | FK | 소속 SpendingItem |
-| `label` | VARCHAR(100) | X | - | 계약금/중도금/잔금 등 |
-| `amount` | BIGINT | X | NOT NULL, CHECK >= 0 | 지급금액 |
+| `contract_id` | UUID | X | FK | 소속 Contract |
+| `name` | VARCHAR(100) | X | - | 계약금/중도금/잔금 등 |
+| `amount` | BIGINT | O | CHECK >= 0 | 지급금액. 확인되지 않은 값은 NULL |
 | `due_date` | DATE | O | - | 지급 예정일 |
 | `status` | ENUM | X | DEFAULT UNPAID | 지급 상태 |
-| `paid_at` | DATE | O | - | 실제 지급일 |
 | `source_text` | TEXT | O | - | 해당 정보를 추출한 원문 |
-| `source_page` | INT | O | - | 근거 페이지 |
 | `created_at` | TIMESTAMPTZ | X | DEFAULT now() | 생성일 |
 | `updated_at` | TIMESTAMPTZ | X | DEFAULT now() | 수정일 |
 
@@ -351,12 +318,12 @@ OTHER
 | --- | --- |
 | `UNPAID` | 미지급 |
 | `PAID` | 지급 완료 |
-| `CANCELLED` | 지급 취소 |
+| `UNKNOWN` | 지급 상태 확인 필요 |
 
 ### 특징
 
-`payments`는 사용자가 확정한 지급 데이터이므로 `amount`는 반드시 존재해야 한다.
-AI가 금액을 찾지 못한 경우에는 확정 전에 사용자가 값을 입력하도록 한다.
+`amount`를 찾지 못한 Payment도 확정할 수 있다. 이 경우 UI에서 확인 필요로 표시하고 금융
+계산에서는 제외한다. 값을 추측하거나 `total_price`에서 역산하지 않는다.
 
 이 테이블을 기준으로 **Wedding Financial Timeline**을 만들 수 있다.
 
@@ -372,7 +339,7 @@ SUM(UNPAID payments)
 
 ---
 
-## spending_terms
+## cancellation_terms
 
 #### 역할
 
@@ -393,45 +360,26 @@ SUM(UNPAID payments)
 | 컬럼 | 타입 | NULL | 제약조건 | 설명 |
 | --- | --- | --- | --- | --- |
 | `id` | UUID | X | PK | 계약조건 식별자 |
-| `spending_item_id` | UUID | X | FK | 소속 지출 |
-| `term_type` | VARCHAR(50) | X | - | 조건 종류 |
-| `content` | TEXT | X | - | 정리된 조건 |
+| `contract_id` | UUID | X | FK | 소속 Contract |
+| `summary` | TEXT | X | - | 취소조건 요약 |
 | `source_text` | TEXT | O | - | 계약서 원문 |
-| `source_page` | INT | O | - | 근거 페이지 |
 | `created_at` | TIMESTAMPTZ | X | DEFAULT now() | 생성일 |
 | `updated_at` | TIMESTAMPTZ | X | DEFAULT now() | 수정일 |
-
-### `term_type` 예시
-
-```
-CANCELLATION
-REFUND
-PENALTY
-GUARANTEED_GUESTS
-CHANGE_DEADLINE
-ADDITIONAL_COST
-OTHER
-```
 
 #### 예시
 
 ```
-term_type
-CANCELLATION
-
-content
+summary
 예식 90일 전까지 취소 시 계약금 전액 환불
 
 source_text
 계약일로부터 예식 90일 전까지 취소 시 계약금을 전액 환불한다.
 
-source_page
-3
 ```
 
 ### 특징
 
-`spending_items.cancellation_policy`처럼 하나의 TEXT 필드에 모든 조건을 넣지 않는다.
+`contracts.cancellation_policy`처럼 하나의 TEXT 필드에 모든 조건을 넣지 않는다.
 
 따라서 향후:
 
@@ -462,7 +410,6 @@ source_page
 | --- | --- | --- | --- | --- |
 | `id` | UUID | X | PK | 문서 식별자 |
 | `wedding_plan_id` | UUID | X | FK | 소유 WeddingPlan |
-| `spending_item_id` | UUID | O | FK | 확정 후 연결되는 지출 |
 | `uploaded_by_member_id` | UUID | X | FK | 문서 업로드 Member |
 | `document_type` | VARCHAR(50) | O | - | 문서 종류 |
 | `original_filename` | VARCHAR(255) | X | - | 원본 파일명 |
@@ -479,9 +426,9 @@ source_page
 ```
 UPLOADED
    ↓
-ANALYZING
+PROCESSING
    ↓
-PENDING_REVIEW
+REVIEW_REQUIRED
    ↓
 CONFIRMED
 ```
@@ -489,35 +436,32 @@ CONFIRMED
 실패:
 
 ```
-ANALYZING
+PROCESSING
    ↓
 FAILED
 ```
 
 ### 특징
 
-`spending_item_id`는 Nullable이어야 한다.
-
-문서 업로더는 반드시 해당 문서와 동일한 WeddingPlan 소속이어야 하며, 연결되는 SpendingItem도 동일한 WeddingPlan 소속이어야 한다. 두 일치 여부는 서비스 레이어에서 검증한다.
-
-`spending_item_id`에는 UNIQUE를 두지 않는다. 하나의 지출에 계약서·견적서·변경계약서 등 여러 근거 문서가 연결될 수 있도록 **SpendingItem 1 : N Document** 관계를 허용한다.
-
-단, `CONFIRMED` 문서의 `spending_item_id`는 일반 수정 API에서 재연결할 수 없도록 서비스 레이어에서 제한한다.
+문서 업로더는 반드시 해당 문서와 동일한 WeddingPlan 소속이어야 한다. Contract 확정 시
+`contracts.document_id`가 이 Document를 참조하며, 두 리소스의 WeddingPlan 일치 여부를 Service에서
+검증한다. MVP에서는 Document 한 건이 Contract 한 건으로 확정되므로 `contracts.document_id`에
+UNIQUE를 둔다.
 
 처음 업로드할 때는:
 
 ```
 Document 생성
-
-spending_item_id = NULL
 ```
 
 AI가 문서를 분석하고 사용자가 확정하면:
 
 ```
-SpendingItem 생성
+Contract 생성
         ↓
-Document.spending_item_id 연결
+Contract.document_id로 Document 참조
+        ↓
+Document CONFIRMED 전환
 ```
 
 하는 구조다.
@@ -575,9 +519,9 @@ extraction_raw
         ↓
 실제 서비스 데이터
         ↓
-SpendingItem
+Contract
 Payment
-SpendingTerm
+CancellationTerm
 ```
 
 이렇게 분리한다.
@@ -619,11 +563,12 @@ SpendingTerm
 - 금액은 원 단위 BIGINT로 저장한다.
 - 지급일·결혼일은 DATE, 생성·수정 시각은 TIMESTAMPTZ를 사용한다.
 - AI 최초 분석 결과는 documents.extraction_raw에 JSONB로 저장한다.
-- 사용자 확정값은 spending_items, payments, spending_terms에 저장한다.
-- 금융 계산에는 확정된 SpendingItem의 Payment만 사용한다.
-- Payment의 `amount`는 NOT NULL이며 0 이상이어야 한다.
-- `SpendingItem.status = CONFIRMED` 전환 시 `total_amount`는 필수이며, `total_amount = SUM(payments.amount)`인지 검증한다.
-- 위 금액 정합성 검증에 실패하면 확정 트랜잭션 전체를 롤백한다.
+- 사용자 확정값은 contracts, payments, cancellation_terms에 저장한다.
+- 금융 계산에는 확정된 Contract의 Payment만 사용한다.
+- Payment의 `amount`는 NULL 또는 0 이상이다. NULL은 확인 필요 값이며 금융 계산에서 제외한다.
+- Payment가 없는 계약도 확정할 수 있다.
+- `total_price`와 Payment 합계가 달라도 확정을 허용하고 warning으로 안내한다.
+- `total_price`나 Payment 금액을 서로 역산하거나 자동 보정하지 않는다.
 - due_date = NULL이어도 금액이 확정되면 지출 합계에는 포함하고, 타임라인에서는 지급일 확인 필요로 표시한다.
 - AI 장애 대응이 필요하면 analysis_source = LIVE_AI / DEMO_FALLBACK으로 구분한다.
 
@@ -631,44 +576,40 @@ SpendingTerm
 ~~~text
 사용자 확정
    ↓
-SpendingItem / Payment 값 검증
-- total_amount 필수
-- 모든 Payment.amount 필수
-- total_amount = SUM(Payment.amount)
+Contract / Payment 값 검증
+- company 필수
+- total_price는 0 이상
+- Payment.amount는 NULL 또는 0 이상
    ↓
-SpendingItem 생성
+Contract 생성
 Payment 생성
-SpendingTerm 생성
+CancellationTerm 생성
 Document 연결 및 CONFIRMED 변경
 ~~~
 위 과정은 하나의 트랜잭션으로 처리하며, 검증 또는 저장 중 하나라도 실패하면 전체 롤백한다.
 
-### Payment 수정 정합성
-
-- `CONFIRMED` 상태의 SpendingItem에 연결된 Payment를 추가·수정·삭제할 때도 금액 정합성을 검증한다.
-- 변경 후 `SUM(payments.amount) = spending_items.total_amount`를 만족해야 한다.
-- 불일치하면 변경을 저장하지 않고 트랜잭션을 롤백한다.
-- `total_amount`는 Payment 변경에 따라 자동 수정하지 않는다.
+MVP에서는 확정 Contract의 Payment 추가·수정·삭제 API를 제공하지 않는다.
 
 ## 인덱스 및 UNIQUE
 
 - WEDDING_PLAN_MEMBERS(wedding_plan_id, user_id) UNIQUE
 - ASSETS(wedding_plan_id)
-- SPENDING_ITEMS(wedding_plan_id, status)
-- PAYMENTS(spending_item_id, status, due_date)
+- CONTRACTS(wedding_plan_id, status, confirmed_at)
+- CONTRACTS(document_id) UNIQUE
+- PAYMENTS(contract_id, status, due_date)
 - DOCUMENTS(wedding_plan_id, analysis_status, created_at)
 - DOCUMENT_CHUNKS(wedding_plan_id)
 - DOCUMENT_CHUNKS(document_id, chunk_index) UNIQUE
 
 ## 필수 검증 테스트
 
-- SpendingItem 삭제 시 `documents.spending_item_id`만 NULL이 되고 `wedding_plan_id`는 유지되는지 확인한다.
-- SpendingItem 확정 시 `total_amount != SUM(payments.amount)`이면 요청을 실패시키고 전체 트랜잭션이 롤백되는지 확인한다.
+- 확정 도중 Contract, Payment, CancellationTerm 또는 Document 갱신 하나라도 실패하면 전체
+  트랜잭션이 롤백되는지 확인한다.
+- `amount=NULL`, 빈 payments, `total_price`와 Payment 합계 불일치 계약이 정책대로 확정되는지
+  확인한다.
 
 ## 삭제
 
 - 확정 전 Document 삭제 시 관련 DocumentChunk도 함께 삭제한다.
-- SpendingItem 삭제 시 연결된 Payment, SpendingTerm도 함께 삭제한다.
-- SpendingItem 삭제 시 `documents.spending_item_id`만 NULL로 변경하고 `documents.wedding_plan_id`는 유지한다. 복합 FK를 사용하지 않으므로 `ON DELETE SET NULL` 충돌을 피한다.
-- 확정된 계약정보가 연결된 문서는 바로 삭제하지 않고 사용자 확인을 받는다.
-- MVP에서는 soft delete를 구현하지 않아도 되지만 원본과 관계 데이터 삭제 순서를 지킨다.
+- Contract와 연결 데이터의 삭제 API는 MVP에서 제공하지 않는다.
+- 원본 Document 삭제 정책은 Document 담당 범위에서 관리하며 CONFIRMED 문서는 임의 삭제하지 않는다.
