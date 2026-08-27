@@ -358,23 +358,34 @@ function findingKey(finding) {
 }
 
 async function fetchPreviouslyReportedInlineFindingKeys() {
-  const keys = new Set();
-  for (let page = 1; ; page += 1) {
-    const comments = await githubRequest(
-      `/repos/${repository}/pulls/${pullRequestNumber}/comments?per_page=100&page=${page}`,
+  try {
+    const keys = new Set();
+    for (let page = 1; ; page += 1) {
+      const comments = await githubRequest(
+        `/repos/${repository}/pulls/${pullRequestNumber}/comments?per_page=100&page=${page}`,
+      );
+      if (!Array.isArray(comments)) {
+        throw new TypeError("GitHub review comments response must be an array");
+      }
+      for (const comment of comments) {
+        if (comment.user?.login !== REVIEW_COMMENT_AUTHOR || typeof comment.body !== "string") {
+          continue;
+        }
+        const title = comment.body.match(/^\*\*\[(?:Critical|Major)\]\s+(.+?)\*\*/m)?.[1];
+        if (typeof comment.path === "string" && title) {
+          keys.add(findingKey({ path: comment.path, title }));
+        }
+      }
+      if (comments.length < 100) {
+        return keys;
+      }
+    }
+  } catch (error) {
+    console.warn(
+      "Failed to fetch previous inline findings; continuing without deduplication",
+      error,
     );
-    for (const comment of comments) {
-      if (comment.user?.login !== REVIEW_COMMENT_AUTHOR || typeof comment.body !== "string") {
-        continue;
-      }
-      const title = comment.body.match(/^\*\*\[(?:Critical|Major)\]\s+(.+?)\*\*/m)?.[1];
-      if (typeof comment.path === "string" && title) {
-        keys.add(findingKey({ path: comment.path, title }));
-      }
-    }
-    if (comments.length < 100) {
-      return keys;
-    }
+    return new Set();
   }
 }
 
