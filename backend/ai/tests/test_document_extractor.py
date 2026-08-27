@@ -4,9 +4,9 @@ from typing import Any
 
 import pytest
 
-from ai.common.exceptions import AiOutputError, AiProviderError
+from ai.common.exceptions import AiOutputError, AiProviderError, DemoFallbackError
 from ai.document_extraction.extractor import analyze_document
-from ai.document_extraction.fallback import DEFAULT_DEMO_DOCUMENT_PATH
+from ai.document_extraction.fallback import DEFAULT_DEMO_DOCUMENT_PATH, DemoFallbackRegistry
 
 
 class SuccessfulProvider:
@@ -36,6 +36,11 @@ class InvalidOutputProvider:
             "cancellationTerms": [],
             "warnings": [],
         }
+
+
+class FailingFallbackRegistry(DemoFallbackRegistry):
+    def find(self, document_path: Path) -> None:
+        raise DemoFallbackError("fallback details that must not leak")
 
 
 def test_live_provider_result_has_priority_over_demo_fallback() -> None:
@@ -81,3 +86,21 @@ def test_invalid_provider_output_is_rejected_without_matching_fallback(tmp_path:
 
     with pytest.raises(AiOutputError, match="invalid extraction"):
         asyncio.run(analyze_document(document_path, InvalidOutputProvider()))
+
+
+def test_fallback_lookup_failure_does_not_hide_provider_error(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with pytest.raises(AiProviderError, match="AI provider request failed") as error:
+        asyncio.run(
+            analyze_document(
+                DEFAULT_DEMO_DOCUMENT_PATH,
+                FailingProvider(),
+                fallback_registry=FailingFallbackRegistry(()),
+            )
+        )
+
+    assert str(error.value) == "AI provider request failed"
+    assert "fallback details" not in caplog.text
+    assert "provider response" not in caplog.text
+    assert "Demo fallback lookup failed" in caplog.text

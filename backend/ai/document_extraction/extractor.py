@@ -1,14 +1,17 @@
+import logging
 from pathlib import Path
 
 from pydantic import ValidationError
 
-from ai.common.exceptions import AiOutputError, AiProviderError
+from ai.common.exceptions import AiOutputError, AiProviderError, DemoFallbackError
 from ai.document_extraction.fallback import (
     DEFAULT_DEMO_FALLBACK_REGISTRY,
     DemoFallbackRegistry,
 )
 from ai.document_extraction.schemas import DocumentAnalysisResult, DocumentExtraction
 from ai.providers.base import AiProvider
+
+logger = logging.getLogger(__name__)
 
 
 async def analyze_document(
@@ -39,11 +42,15 @@ async def analyze_document(
                 )
 
     if enable_demo_fallback:
-        fallback = fallback_registry.find(file_path)
-        if fallback is not None:
-            return DocumentAnalysisResult(
-                extraction=fallback,
-                analysis_source="DEMO_FALLBACK",
-            )
+        try:
+            fallback = fallback_registry.find(file_path)
+        except DemoFallbackError:
+            logger.warning("Demo fallback lookup failed after AI analysis failure")
+        else:
+            if fallback is not None:
+                return DocumentAnalysisResult(
+                    extraction=fallback,
+                    analysis_source="DEMO_FALLBACK",
+                )
 
     raise provider_error
