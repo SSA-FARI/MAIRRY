@@ -131,11 +131,9 @@ User B
 
 ```text
 (wedding_plan_id, user_id)
-(wedding_plan_id, id)
 ```
 
-- `(wedding_plan_id, user_id)`: 동일 사용자의 중복 참여를 방지한다.
-- `(wedding_plan_id, id)`: 다른 테이블에서 **WeddingPlan과 Member의 소속 일치성**을 복합 FK로 검증하기 위해 사용한다.
+동일 사용자가 같은 WeddingPlan에 중복 참여하는 것을 방지한다.
 
 ### `role`
 
@@ -229,12 +227,7 @@ CHECK (
 )
 ```
 
-또한 개인 자산의 `owner_member_id`는 반드시 동일한 WeddingPlan 소속이어야 한다.
-
-```text
-assets(wedding_plan_id, owner_member_id)
-→ wedding_plan_members(wedding_plan_id, id)
-```
+또한 개인 자산의 `owner_member_id`는 반드시 해당 `asset.wedding_plan_id`와 동일한 WeddingPlan 소속이어야 하며, 이 일치 여부는 서비스 레이어에서 검증한다.
 
 ---
 
@@ -270,7 +263,7 @@ WeddingPlan
 | `source_type` | ENUM | X | - | 데이터 발생 출처 |
 | `total_amount` | BIGINT | O | CHECK >= 0 | 총 지출 금액 |
 | `status` | ENUM | X | DEFAULT DRAFT | 지출 상태 |
-| `confirmed_by_member_id` | UUID | O | 복합 FK | 동일 WeddingPlan 소속 검수 사용자 |
+| `confirmed_by_member_id` | UUID | O | FK | AI 결과 검수 사용자 |
 | `confirmed_at` | TIMESTAMPTZ | O | - | 확정일 |
 | `created_at` | TIMESTAMPTZ | X | DEFAULT now() | 생성일 |
 | `updated_at` | TIMESTAMPTZ | X | DEFAULT now() | 수정일 |
@@ -311,14 +304,7 @@ OTHER
 
 계약서가 없는 가전 견적, 여행 예약, 직접 입력 비용까지 동일한 구조로 확장할 수 있다.
 
-검수자는 반드시 해당 지출과 동일한 WeddingPlan 소속이어야 한다.
-
-```text
-spending_items(wedding_plan_id, confirmed_by_member_id)
-→ wedding_plan_members(wedding_plan_id, id)
-```
-
-복합 FK 지원을 위해 `(wedding_plan_id, id)` UNIQUE를 둔다.
+검수자는 반드시 해당 지출과 동일한 WeddingPlan 소속이어야 하며, 이 일치 여부는 서비스 레이어에서 검증한다.
 
 ---
 
@@ -477,7 +463,7 @@ source_page
 | `id` | UUID | X | PK | 문서 식별자 |
 | `wedding_plan_id` | UUID | X | FK | 소유 WeddingPlan |
 | `spending_item_id` | UUID | O | FK | 확정 후 연결되는 지출 |
-| `uploaded_by_member_id` | UUID | X | 복합 FK | 동일 WeddingPlan 소속 업로드 Member |
+| `uploaded_by_member_id` | UUID | X | FK | 문서 업로드 Member |
 | `document_type` | VARCHAR(50) | O | - | 문서 종류 |
 | `original_filename` | VARCHAR(255) | X | - | 원본 파일명 |
 | `file_url` | TEXT | X | - | Object Storage 경로 |
@@ -512,19 +498,7 @@ FAILED
 
 `spending_item_id`는 Nullable이어야 한다.
 
-문서 업로더는 반드시 해당 문서와 동일한 WeddingPlan 소속이어야 한다.
-
-```text
-documents(wedding_plan_id, uploaded_by_member_id)
-→ wedding_plan_members(wedding_plan_id, id)
-```
-
-연결되는 SpendingItem 역시 동일한 WeddingPlan 소속이어야 한다.
-
-```text
-documents(wedding_plan_id, spending_item_id)
-→ spending_items(wedding_plan_id, id)
-```
+문서 업로더는 반드시 해당 문서와 동일한 WeddingPlan 소속이어야 하며, 연결되는 SpendingItem도 동일한 WeddingPlan 소속이어야 한다. 두 일치 여부는 서비스 레이어에서 검증한다.
 
 `spending_item_id`에는 UNIQUE를 두지 않는다. 하나의 지출에 계약서·견적서·변경계약서 등 여러 근거 문서가 연결될 수 있도록 **SpendingItem 1 : N Document** 관계를 허용한다.
 
@@ -631,20 +605,13 @@ SpendingTerm
 | `embedding` | VECTOR(1536) | O | - | Embedding 벡터 |
 | `created_at` | TIMESTAMPTZ | X | DEFAULT now() | 생성일 |
 
-`document_chunks.wedding_plan_id`와 원본 `documents.wedding_plan_id`는 반드시 일치해야 한다.
-
-```text
-document_chunks(wedding_plan_id, document_id)
-→ documents(wedding_plan_id, id)
-```
-
-복합 FK 지원을 위해 `documents(wedding_plan_id, id)` UNIQUE를 둔다.
+`document_chunks.wedding_plan_id`와 원본 `documents.wedding_plan_id`는 반드시 일치해야 하며, 이 일치 여부는 저장 시 서비스 레이어에서 검증한다.
 
 ## 권한 및 WeddingPlan 격리 원칙
 
 - 모든 조회·수정·삭제 API는 요청 사용자가 해당 `wedding_plan_id`의 `wedding_plan_members`인지 먼저 검증한다.
 - `uploaded_by_member_id`, `confirmed_by_member_id`, `owner_member_id`는 대상 리소스와 **동일한 WeddingPlan 소속**이어야 한다.
-- DB에서는 가능한 관계에 복합 FK를 사용해 교차 WeddingPlan 참조를 차단한다.
+- ERD 관계는 단일 FK로 유지하고, WeddingPlan 소속 일치 여부는 서비스 레이어에서 검증한다.
 - RAG 검색도 `wedding_plan_id`로 먼저 필터링한 뒤 벡터 유사도 검색을 수행한다.
 
 ## 저장 원칙
@@ -655,6 +622,8 @@ document_chunks(wedding_plan_id, document_id)
 - 사용자 확정값은 spending_items, payments, spending_terms에 저장한다.
 - 금융 계산에는 확정된 SpendingItem의 Payment만 사용한다.
 - Payment의 `amount`는 NOT NULL이며 0 이상이어야 한다.
+- `SpendingItem.status = CONFIRMED` 전환 시 `total_amount`는 필수이며, `total_amount = SUM(payments.amount)`인지 검증한다.
+- 위 금액 정합성 검증에 실패하면 확정 트랜잭션 전체를 롤백한다.
 - due_date = NULL이어도 금액이 확정되면 지출 합계에는 포함하고, 타임라인에서는 지급일 확인 필요로 표시한다.
 - AI 장애 대응이 필요하면 analysis_source = LIVE_AI / DEMO_FALLBACK으로 구분한다.
 
@@ -662,30 +631,37 @@ document_chunks(wedding_plan_id, document_id)
 ~~~text
 사용자 확정
    ↓
+SpendingItem / Payment 값 검증
+- total_amount 필수
+- 모든 Payment.amount 필수
+- total_amount = SUM(Payment.amount)
+   ↓
 SpendingItem 생성
 Payment 생성
 SpendingTerm 생성
 Document 연결 및 CONFIRMED 변경
 ~~~
-위 과정은 하나의 트랜잭션으로 처리한다.
+위 과정은 하나의 트랜잭션으로 처리하며, 검증 또는 저장 중 하나라도 실패하면 전체 롤백한다.
 
 ## 인덱스 및 UNIQUE
 
 - WEDDING_PLAN_MEMBERS(wedding_plan_id, user_id) UNIQUE
-- WEDDING_PLAN_MEMBERS(wedding_plan_id, id) UNIQUE
 - ASSETS(wedding_plan_id)
-- SPENDING_ITEMS(wedding_plan_id, id) UNIQUE
 - SPENDING_ITEMS(wedding_plan_id, status)
 - PAYMENTS(spending_item_id, status, due_date)
-- DOCUMENTS(wedding_plan_id, id) UNIQUE
 - DOCUMENTS(wedding_plan_id, analysis_status, created_at)
 - DOCUMENT_CHUNKS(wedding_plan_id)
 - DOCUMENT_CHUNKS(document_id, chunk_index) UNIQUE
+
+## 필수 검증 테스트
+
+- SpendingItem 삭제 시 `documents.spending_item_id`만 NULL이 되고 `wedding_plan_id`는 유지되는지 확인한다.
+- SpendingItem 확정 시 `total_amount != SUM(payments.amount)`이면 요청을 실패시키고 전체 트랜잭션이 롤백되는지 확인한다.
 
 ## 삭제
 
 - 확정 전 Document 삭제 시 관련 DocumentChunk도 함께 삭제한다.
 - SpendingItem 삭제 시 연결된 Payment, SpendingTerm도 함께 삭제한다.
-- SpendingItem이 삭제되어도 원본 Document는 자동 삭제하지 않고 연결만 해제한다.
+- SpendingItem 삭제 시 `documents.spending_item_id`만 NULL로 변경하고 `documents.wedding_plan_id`는 유지한다. 복합 FK를 사용하지 않으므로 `ON DELETE SET NULL` 충돌을 피한다.
 - 확정된 계약정보가 연결된 문서는 바로 삭제하지 않고 사용자 확인을 받는다.
 - MVP에서는 soft delete를 구현하지 않아도 되지만 원본과 관계 데이터 삭제 순서를 지킨다.
