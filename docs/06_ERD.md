@@ -305,7 +305,7 @@ MVP에서는 확정 생성과 목록·상세 조회만 제공한다. 계약 수�
 | `id` | UUID | X | PK | 지급항목 식별자 |
 | `contract_id` | UUID | X | FK | 소속 Contract |
 | `name` | VARCHAR(100) | X | - | 계약금/중도금/잔금 등 |
-| `amount` | BIGINT | O | CHECK >= 0 | 지급금액. 확인되지 않은 값은 NULL |
+| `amount` | BIGINT | X | NOT NULL, CHECK >= 0 | 사용자가 확정한 지급금액 |
 | `due_date` | DATE | O | - | 지급 예정일 |
 | `status` | ENUM | X | DEFAULT UNPAID | 지급 상태 |
 | `source_text` | TEXT | O | - | 해당 정보를 추출한 원문 |
@@ -322,8 +322,9 @@ MVP에서는 확정 생성과 목록·상세 조회만 제공한다. 계약 수�
 
 ### 특징
 
-`amount`를 찾지 못한 Payment도 확정할 수 있다. 이 경우 UI에서 확인 필요로 표시하고 금융
-계산에서는 제외한다. 값을 추측하거나 `total_price`에서 역산하지 않는다.
+AI 추출 결과의 `amount`는 NULL일 수 있지만 Contract의 Payment로 저장하기 전 사용자가 0 이상의
+정수 금액을 입력해야 한다. NULL 금액은 검수 화면에서 확인 필요로 표시하고 확정을 차단한다.
+값을 추측하거나 `total_price`에서 역산하지 않는다.
 
 이 테이블을 기준으로 **Wedding Financial Timeline**을 만들 수 있다.
 
@@ -565,8 +566,8 @@ CancellationTerm
 - AI 최초 분석 결과는 documents.extraction_raw에 JSONB로 저장한다.
 - 사용자 확정값은 contracts, payments, cancellation_terms에 저장한다.
 - 금융 계산에는 확정된 Contract의 Payment만 사용한다.
-- Payment의 `amount`는 NULL 또는 0 이상이다. NULL은 확인 필요 값이며 금융 계산에서 제외한다.
-- Payment가 없는 계약도 확정할 수 있다.
+- AI 추출 단계의 Payment `amount`는 NULL일 수 있지만 확정 Payment는 NOT NULL이고 0 이상이다.
+- MVP의 WEDDING_HALL 계약은 Payment가 1개 이상이어야 확정할 수 있다.
 - `total_price`와 Payment 합계가 달라도 확정을 허용하고 warning으로 안내한다.
 - `total_price`나 Payment 금액을 서로 역산하거나 자동 보정하지 않는다.
 - due_date = NULL이어도 금액이 확정되면 지출 합계에는 포함하고, 타임라인에서는 지급일 확인 필요로 표시한다.
@@ -579,8 +580,8 @@ CancellationTerm
 - `expected_balance`는 `available_asset - remaining_expense`로 계산한다.
 - `contract.total_price`는 계약서상 총액을 표시하기 위한 값이며 금융 잔액 계산에 직접 사용하지
   않는다.
-- Payment의 `amount`가 NULL이면 `contract.total_price`에서 역산하거나 대체하지 않고 계산에서
-  제외한다.
+- AI 추출 Payment의 `amount`가 NULL이면 `contract.total_price`에서 역산하거나 대체하지 않고
+  검수 화면에서 사용자 입력을 요구한다.
 - `total_price`와 Payment 합계가 달라도 두 값을 자동 보정하지 않고 검수 화면에서 warning으로
   안내한다.
 - 계약 총액과 지급 일정 합계는 의미가 다른 값이므로 UI에서 동일한 금융 지표처럼 표시하지
@@ -593,7 +594,8 @@ CancellationTerm
 Contract / Payment 값 검증
 - company 필수
 - total_price는 0 이상
-- Payment.amount는 NULL 또는 0 이상
+- Payment는 1개 이상
+- Payment.amount는 NOT NULL이고 0 이상
    ↓
 Contract 생성
 Payment 생성
@@ -611,6 +613,7 @@ MVP에서는 확정 Contract의 Payment 추가·수정·삭제 API를 제공하�
 - CONTRACTS(wedding_plan_id, status, confirmed_at)
 - CONTRACTS(document_id) UNIQUE
 - PAYMENTS(contract_id, status, due_date)
+- CANCELLATION_TERMS(contract_id)
 - DOCUMENTS(wedding_plan_id, analysis_status, created_at)
 - DOCUMENT_CHUNKS(wedding_plan_id)
 - DOCUMENT_CHUNKS(document_id, chunk_index) UNIQUE
@@ -619,8 +622,8 @@ MVP에서는 확정 Contract의 Payment 추가·수정·삭제 API를 제공하�
 
 - 확정 도중 Contract, Payment, CancellationTerm 또는 Document 갱신 하나라도 실패하면 전체
   트랜잭션이 롤백되는지 확인한다.
-- `amount=NULL`, 빈 payments, `total_price`와 Payment 합계 불일치 계약이 정책대로 확정되는지
-  확인한다.
+- `amount=NULL` 또는 빈 payments 요청은 확정되지 않고 전체 트랜잭션이 롤백되는지 확인한다.
+- `total_price`와 Payment 합계가 불일치해도 warning과 함께 확정되는지 확인한다.
 
 ## 삭제
 

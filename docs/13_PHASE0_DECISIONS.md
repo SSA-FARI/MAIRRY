@@ -23,10 +23,11 @@ Phase 1 병렬 개발 전에 A/B/C/D가 공유해야 하는 데이터 타입과 
 
 ## 계약과 금융
 
-- Payment amount가 null인 추출값은 확정할 수 있지만 금융 계산에서 제외하고 확인 필요로 표시한다.
-- Payment가 없는 계약도 확정할 수 있다.
+- Payment amount가 null인 AI 추출값은 검수 화면에서 확인 필요로 표시한다. 계약 확정 전 사용자가
+  0 이상의 정수 금액을 입력해야 하며 null 상태로는 확정할 수 없다.
+- MVP의 WEDDING_HALL 계약은 Payment가 1개 이상이어야 확정할 수 있다.
 - Payment 합계와 totalPrice가 달라도 확정을 막지 않고 warning으로 안내한다.
-- CONFIRMED 계약의 amount가 있는 UNPAID Payment만 남은 지출에 포함한다.
+- CONFIRMED 계약의 UNPAID Payment만 남은 지출에 포함한다. 확정 Payment의 amount는 항상 존재한다.
 - 과거 UNPAID 항목도 남은 지출에는 포함한다.
 - nearestPayment는 기준일 이후 dueDate가 있는 가장 이른 UNPAID 항목이다.
 - 시뮬레이션은 저장하지 않으며 원본 계획과 Payment를 변경하지 않는다.

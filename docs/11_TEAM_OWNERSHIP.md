@@ -80,7 +80,7 @@
 - `frontend/src/domains/contracts/`
 - `frontend/src/domains/chat/`
 
-완료 기준: REVIEW-01~~03, CHAT-01~~10, 계약 목록·상세 API 테스트.
+완료 기준: REVIEW-01~~05, CHAT-01~~10, 계약 목록·상세 API 테스트.
 
 ### 개발자 D — AI Provider·공통 기반·통합
 
