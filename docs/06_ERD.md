@@ -129,11 +129,13 @@ User B
 
 ### UNIQUE
 
-```
+```text
 (wedding_plan_id, user_id)
+(wedding_plan_id, id)
 ```
 
-한 사용자가 동일한 WeddingPlan에 두 번 등록되는 것을 방지한다.
+- `(wedding_plan_id, user_id)`: 동일 사용자의 중복 참여를 방지한다.
+- `(wedding_plan_id, id)`: 다른 테이블에서 **WeddingPlan과 Member의 소속 일치성**을 복합 FK로 검증하기 위해 사용한다.
 
 ### `role`
 
@@ -179,10 +181,10 @@ if (memberCount>=2) {
 | --- | --- | --- | --- | --- |
 | `id` | UUID | X | PK | 자산 식별자 |
 | `wedding_plan_id` | UUID | X | FK | WeddingPlan |
-| `owner_member_id` | UUID | O | FK | 개인 자산의 소유 Member |
-| `owner_type` | ENUM | X | - | PERSONAL / JOINT |
+| `owner_member_id` | UUID | O | FK | PERSONAL이면 필수, JOINT이면 NULL |
+| `owner_type` | ENUM | X | CHECK | PERSONAL / JOINT |
 | `category` | ENUM | X | - | CASH / SAVINGS |
-| `amount` | NUMERIC(15,0) | X | - | 자산 금액 |
+| `amount` | BIGINT | X | CHECK >= 0 | 자산 금액 |
 | `label` | VARCHAR(100) | O | - | 사용자 지정 이름 |
 | `created_at` | TIMESTAMPTZ | X | DEFAULT now() | 생성일 |
 | `updated_at` | TIMESTAMPTZ | X | DEFAULT now() | 수정일 |
@@ -217,6 +219,23 @@ MVP에서는 `월소득`, `대출`을 이 테이블에 섞지 않는 것이 좋�
 
 향후 금융기능 확대 시 `incomes`, `liabilities`를 추가할 수 있다.
 
+### 무결성 제약
+
+```sql
+CHECK (
+  (owner_type = 'PERSONAL' AND owner_member_id IS NOT NULL)
+  OR
+  (owner_type = 'JOINT' AND owner_member_id IS NULL)
+)
+```
+
+또한 개인 자산의 `owner_member_id`는 반드시 동일한 WeddingPlan 소속이어야 한다.
+
+```text
+assets(wedding_plan_id, owner_member_id)
+→ wedding_plan_members(wedding_plan_id, id)
+```
+
 ---
 
 ## spending_items
@@ -249,9 +268,9 @@ WeddingPlan
 | `title` | VARCHAR(200) | O | - | 사용자에게 보여줄 제목 |
 | `vendor_name` | VARCHAR(200) | O | - | 업체명 |
 | `source_type` | ENUM | X | - | 데이터 발생 출처 |
-| `total_amount` | NUMERIC(15,0) | O | - | 총 지출 금액 |
+| `total_amount` | BIGINT | O | CHECK >= 0 | 총 지출 금액 |
 | `status` | ENUM | X | DEFAULT DRAFT | 지출 상태 |
-| `confirmed_by_member_id` | UUID | O | FK | AI 결과 검수 사용자 |
+| `confirmed_by_member_id` | UUID | O | 복합 FK | 동일 WeddingPlan 소속 검수 사용자 |
 | `confirmed_at` | TIMESTAMPTZ | O | - | 확정일 |
 | `created_at` | TIMESTAMPTZ | X | DEFAULT now() | 생성일 |
 | `updated_at` | TIMESTAMPTZ | X | DEFAULT now() | 수정일 |
@@ -283,14 +302,23 @@ OTHER
 
 | 값 | 설명 |
 | --- | --- |
-| `DRAFT` | AI 분석 또는 입력 중 |
+| `DRAFT` | 직접 입력 등 임시 지출 정보 |
 | `CONFIRMED` | 사용자 검수 완료 |
 | `COMPLETED` | 지출 완료 |
 | `CANCELLED` | 취소 |
 
 ### 특징
 
-계약서가 없는 가전 견적, 여행 예약, 직접 입력 비용까지 동일한 구조로 확장할 수 있기 때문이다.
+계약서가 없는 가전 견적, 여행 예약, 직접 입력 비용까지 동일한 구조로 확장할 수 있다.
+
+검수자는 반드시 해당 지출과 동일한 WeddingPlan 소속이어야 한다.
+
+```text
+spending_items(wedding_plan_id, confirmed_by_member_id)
+→ wedding_plan_members(wedding_plan_id, id)
+```
+
+복합 FK 지원을 위해 `(wedding_plan_id, id)` UNIQUE를 둔다.
 
 ---
 
@@ -322,7 +350,7 @@ OTHER
 | `id` | UUID | X | PK | 지급항목 식별자 |
 | `spending_item_id` | UUID | X | FK | 소속 SpendingItem |
 | `label` | VARCHAR(100) | X | - | 계약금/중도금/잔금 등 |
-| `amount` | NUMERIC(15,0) | O | - | 지급금액 |
+| `amount` | BIGINT | X | NOT NULL, CHECK >= 0 | 지급금액 |
 | `due_date` | DATE | O | - | 지급 예정일 |
 | `status` | ENUM | X | DEFAULT UNPAID | 지급 상태 |
 | `paid_at` | DATE | O | - | 실제 지급일 |
@@ -340,6 +368,9 @@ OTHER
 | `CANCELLED` | 지급 취소 |
 
 ### 특징
+
+`payments`는 사용자가 확정한 지급 데이터이므로 `amount`는 반드시 존재해야 한다.
+AI가 금액을 찾지 못한 경우에는 확정 전에 사용자가 값을 입력하도록 한다.
 
 이 테이블을 기준으로 **Wedding Financial Timeline**을 만들 수 있다.
 
@@ -446,13 +477,14 @@ source_page
 | `id` | UUID | X | PK | 문서 식별자 |
 | `wedding_plan_id` | UUID | X | FK | 소유 WeddingPlan |
 | `spending_item_id` | UUID | O | FK | 확정 후 연결되는 지출 |
-| `uploaded_by_member_id` | UUID | X | FK | 문서 업로드 Member |
+| `uploaded_by_member_id` | UUID | X | 복합 FK | 동일 WeddingPlan 소속 업로드 Member |
 | `document_type` | VARCHAR(50) | O | - | 문서 종류 |
 | `original_filename` | VARCHAR(255) | X | - | 원본 파일명 |
 | `file_url` | TEXT | X | - | Object Storage 경로 |
 | `content_type` | VARCHAR(100) | O | - | MIME Type |
 | `extraction_raw` | JSONB | O | - | AI 최초 분석 결과 |
 | `analysis_status` | ENUM | X | DEFAULT UPLOADED | AI 분석 상태 |
+| `analysis_source` | ENUM | X | DEFAULT LIVE_AI | LIVE_AI / DEMO_FALLBACK |
 | `created_at` | TIMESTAMPTZ | X | DEFAULT now() | 업로드일 |
 | `updated_at` | TIMESTAMPTZ | X | DEFAULT now() | 수정일 |
 
@@ -479,6 +511,24 @@ FAILED
 ### 특징
 
 `spending_item_id`는 Nullable이어야 한다.
+
+문서 업로더는 반드시 해당 문서와 동일한 WeddingPlan 소속이어야 한다.
+
+```text
+documents(wedding_plan_id, uploaded_by_member_id)
+→ wedding_plan_members(wedding_plan_id, id)
+```
+
+연결되는 SpendingItem 역시 동일한 WeddingPlan 소속이어야 한다.
+
+```text
+documents(wedding_plan_id, spending_item_id)
+→ spending_items(wedding_plan_id, id)
+```
+
+`spending_item_id`에는 UNIQUE를 두지 않는다. 하나의 지출에 계약서·견적서·변경계약서 등 여러 근거 문서가 연결될 수 있도록 **SpendingItem 1 : N Document** 관계를 허용한다.
+
+단, `CONFIRMED` 문서의 `spending_item_id`는 일반 수정 API에서 재연결할 수 없도록 서비스 레이어에서 제한한다.
 
 처음 업로드할 때는:
 
@@ -581,6 +631,21 @@ SpendingTerm
 | `embedding` | VECTOR(1536) | O | - | Embedding 벡터 |
 | `created_at` | TIMESTAMPTZ | X | DEFAULT now() | 생성일 |
 
+`document_chunks.wedding_plan_id`와 원본 `documents.wedding_plan_id`는 반드시 일치해야 한다.
+
+```text
+document_chunks(wedding_plan_id, document_id)
+→ documents(wedding_plan_id, id)
+```
+
+복합 FK 지원을 위해 `documents(wedding_plan_id, id)` UNIQUE를 둔다.
+
+## 권한 및 WeddingPlan 격리 원칙
+
+- 모든 조회·수정·삭제 API는 요청 사용자가 해당 `wedding_plan_id`의 `wedding_plan_members`인지 먼저 검증한다.
+- `uploaded_by_member_id`, `confirmed_by_member_id`, `owner_member_id`는 대상 리소스와 **동일한 WeddingPlan 소속**이어야 한다.
+- DB에서는 가능한 관계에 복합 FK를 사용해 교차 WeddingPlan 참조를 차단한다.
+- RAG 검색도 `wedding_plan_id`로 먼저 필터링한 뒤 벡터 유사도 검색을 수행한다.
 
 ## 저장 원칙
 
@@ -589,6 +654,7 @@ SpendingTerm
 - AI 최초 분석 결과는 documents.extraction_raw에 JSONB로 저장한다.
 - 사용자 확정값은 spending_items, payments, spending_terms에 저장한다.
 - 금융 계산에는 확정된 SpendingItem의 Payment만 사용한다.
+- Payment의 `amount`는 NOT NULL이며 0 이상이어야 한다.
 - due_date = NULL이어도 금액이 확정되면 지출 합계에는 포함하고, 타임라인에서는 지급일 확인 필요로 표시한다.
 - AI 장애 대응이 필요하면 analysis_source = LIVE_AI / DEMO_FALLBACK으로 구분한다.
 
@@ -603,12 +669,15 @@ Document 연결 및 CONFIRMED 변경
 ~~~
 위 과정은 하나의 트랜잭션으로 처리한다.
 
-## 인덱스
+## 인덱스 및 UNIQUE
 
 - WEDDING_PLAN_MEMBERS(wedding_plan_id, user_id) UNIQUE
+- WEDDING_PLAN_MEMBERS(wedding_plan_id, id) UNIQUE
 - ASSETS(wedding_plan_id)
+- SPENDING_ITEMS(wedding_plan_id, id) UNIQUE
 - SPENDING_ITEMS(wedding_plan_id, status)
 - PAYMENTS(spending_item_id, status, due_date)
+- DOCUMENTS(wedding_plan_id, id) UNIQUE
 - DOCUMENTS(wedding_plan_id, analysis_status, created_at)
 - DOCUMENT_CHUNKS(wedding_plan_id)
 - DOCUMENT_CHUNKS(document_id, chunk_index) UNIQUE
