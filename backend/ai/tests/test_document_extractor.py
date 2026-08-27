@@ -1,4 +1,5 @@
 import asyncio
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -38,9 +39,23 @@ class InvalidOutputProvider:
         }
 
 
+class UnexpectedFailureProvider:
+    async def extract_document(self, file_path: Path) -> dict[str, Any]:
+        raise ConnectionResetError("network details that must not leak")
+
+
 class FailingFallbackRegistry(DemoFallbackRegistry):
     def find(self, document_path: Path) -> None:
         raise DemoFallbackError("fallback details that must not leak")
+
+
+class ThreadRecordingFallbackRegistry(DemoFallbackRegistry):
+    def __init__(self) -> None:
+        super().__init__(())
+        self.worker_thread_id: int | None = None
+
+    def find(self, document_path: Path) -> None:
+        self.worker_thread_id = threading.get_ident()
 
 
 def test_live_provider_result_has_priority_over_demo_fallback() -> None:
@@ -50,7 +65,10 @@ def test_live_provider_result_has_priority_over_demo_fallback() -> None:
     assert result.extraction.company == "실시간 분석 웨딩홀"
 
 
-@pytest.mark.parametrize("provider", [None, FailingProvider(), InvalidOutputProvider()])
+@pytest.mark.parametrize(
+    "provider",
+    [None, FailingProvider(), InvalidOutputProvider(), UnexpectedFailureProvider()],
+)
 def test_registered_document_uses_fallback_when_provider_is_unavailable(provider: Any) -> None:
     result = asyncio.run(analyze_document(DEFAULT_DEMO_DOCUMENT_PATH, provider))
 
@@ -104,3 +122,19 @@ def test_fallback_lookup_failure_does_not_hide_provider_error(
     assert "fallback details" not in caplog.text
     assert "provider response" not in caplog.text
     assert "Demo fallback lookup failed" in caplog.text
+
+
+def test_fallback_lookup_runs_outside_event_loop_thread() -> None:
+    registry = ThreadRecordingFallbackRegistry()
+    event_loop_thread_id = threading.get_ident()
+
+    with pytest.raises(AiProviderError, match="AI provider is not configured"):
+        asyncio.run(
+            analyze_document(
+                DEFAULT_DEMO_DOCUMENT_PATH,
+                fallback_registry=registry,
+            )
+        )
+
+    assert registry.worker_thread_id is not None
+    assert registry.worker_thread_id != event_loop_thread_id

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from pathlib import Path
 
@@ -28,7 +29,7 @@ async def analyze_document(
     else:
         try:
             payload = await provider.extract_document(file_path)
-        except (AiProviderError, TimeoutError):
+        except Exception:  # noqa: BLE001 - provider boundary normalizes third-party failures
             provider_error = AiProviderError("AI provider request failed")
         else:
             try:
@@ -43,7 +44,7 @@ async def analyze_document(
 
     if enable_demo_fallback:
         try:
-            fallback = fallback_registry.find(file_path)
+            fallback = await asyncio.to_thread(fallback_registry.find, file_path)
         except DemoFallbackError:
             logger.warning("Demo fallback lookup failed after AI analysis failure")
         else:
