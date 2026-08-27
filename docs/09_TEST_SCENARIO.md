@@ -53,6 +53,9 @@
 | REVIEW-01 | 검수 | 추출값 수정 후 확정 | 수정값이 Contract에 저장 |
 | REVIEW-02 | 검수 | 필수 업체명 누락 | 확정 차단 및 필드 오류 |
 | REVIEW-03 | 검수 | 확정 전 대시보드 조회 | 해당 문서 금액 제외 |
+| REVIEW-04 | 검수 | Payment 금액이 null인 상태로 확정 | 422, 확정 차단 및 금액 입력 안내 |
+| REVIEW-05 | 검수 | Payment가 없는 웨딩홀 계약 확정 | 422, 확정 차단 및 지급항목 추가 안내 |
+| REVIEW-06 | 검수 | FAILED 문서에서 sourceText 없이 직접입력 확정 | sourceText=null로 Contract·Payment 저장 |
 | FIN-01 | 계산 | 기준 데이터 계산 | 남은 지출 2천만 원, 잔액 1천만 원 |
 | FIN-02 | 계산 | PAID 항목 포함 계약 | PAID 금액은 남은 지출에서 제외 |
 | FIN-03 | 계산 | 추가지출 3백만 원 | 시뮬레이션 잔액 7백만 원 |
