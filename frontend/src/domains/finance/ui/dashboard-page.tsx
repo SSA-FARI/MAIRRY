@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { formatWon } from "@/shared/lib/money";
 
 const preview = {
@@ -10,12 +11,35 @@ const preview = {
 export function DashboardPage() {
   return (
     <main style={{ maxWidth: 1200, margin: "0 auto", padding: 32 }}>
-      <header style={{ marginBottom: 28 }}>
-        <p style={{ color: "var(--primary)", fontWeight: 700 }}>MAIRRY</p>
-        <h1>우리 결혼 자금 현황</h1>
-        <p style={{ color: "var(--muted)" }}>
-          계약서를 등록하면 남은 지급 일정과 예상 잔액을 계산합니다.
-        </p>
+      <header
+        style={{
+          marginBottom: 28,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          gap: 16,
+        }}
+      >
+        <div>
+          <p style={{ color: "var(--primary)", fontWeight: 700 }}>MAIRRY</p>
+          <h1>우리 결혼 자금 현황</h1>
+          <p style={{ color: "var(--muted)" }}>
+            계약서를 등록하면 남은 지급 일정과 예상 잔액을 계산합니다.
+          </p>
+        </div>
+        <Link
+          href="/documents/upload"
+          style={{
+            background: "var(--primary)",
+            color: "#fff",
+            borderRadius: 8,
+            padding: "10px 18px",
+            fontWeight: 600,
+            whiteSpace: "nowrap",
+          }}
+        >
+          계약서 업로드
+        </Link>
       </header>
       <section
         style={{
