@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MAIRRY API
-  version: 0.2.0
+  version: 0.3.0
   description: MAIRRY MVP REST contract. JSON fields use camelCase.
 servers:
   - url: http://localhost:8000/api
@@ -11,6 +11,22 @@ paths:
       operationId: getHealth
       responses:
         "200": {description: API health, content: {application/json: {schema: {$ref: "#/components/schemas/Health"}}}}
+  /v1/auth/demo-login:
+    post:
+      operationId: demoLogin
+      summary: Log in as the configured MVP demo user
+      description: >-
+        Public, token-free MVP demonstration endpoint. This is not real authentication.
+        It accepts no request body, selects only the server-configured DEMO_USER_ID,
+        and returns no JWT, refresh token, cookie, session, or password hash.
+      security: []
+      responses:
+        "200":
+          description: Existing or newly initialized demo user public profile
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DemoLoginResponse"}
+        "500": {$ref: "#/components/responses/InternalServerError"}
   /wedding-plan:
     get:
       operationId: getWeddingPlan
@@ -121,11 +137,28 @@ components:
     UnsupportedMediaType: {description: Unsupported file type, content: {application/json: {schema: {$ref: "#/components/schemas/ErrorResponse"}}}}
     UnprocessableEntity: {description: Invalid extraction data, content: {application/json: {schema: {$ref: "#/components/schemas/ErrorResponse"}}}}
     ExternalAiError: {description: AI failed and fallback unavailable, content: {application/json: {schema: {$ref: "#/components/schemas/ErrorResponse"}}}}
+    InternalServerError: {description: Invalid demo configuration or internal persistence failure, content: {application/json: {schema: {$ref: "#/components/schemas/ErrorResponse"}}}}
   schemas:
     Health:
       type: object
       required: [status]
       properties: {status: {type: string, const: ok}}
+      additionalProperties: false
+    DemoUser:
+      type: object
+      required: [id, loginId, displayName, email]
+      properties:
+        id: {type: string, format: uuid}
+        loginId: {type: string, minLength: 1, maxLength: 50}
+        displayName: {type: string, minLength: 1, maxLength: 50}
+        email: {type: [string, "null"], maxLength: 255}
+      additionalProperties: false
+    DemoLoginResponse:
+      type: object
+      required: [user, mode]
+      properties:
+        user: {$ref: "#/components/schemas/DemoUser"}
+        mode: {type: string, const: DEMO}
       additionalProperties: false
     WeddingPlanUpsert:
       type: object
@@ -323,6 +356,7 @@ components:
             - EXTRACTION_VALIDATION_ERROR
             - AI_PROVIDER_ERROR
             - STORAGE_ERROR
+            - CONFIGURATION_ERROR
             - INTERNAL_ERROR
         message: {type: string}
         details: {type: object}

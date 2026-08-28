@@ -33,7 +33,10 @@ services:
     environment:
       APP_ENV: docker
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-mairry}:${POSTGRES_PASSWORD:-mairry}@postgres:5432/${POSTGRES_DB:-mairry}
-      DEMO_USER_ID: 00000000-0000-0000-0000-000000000001
+      DEMO_USER_ID: ${DEMO_USER_ID:?DEMO_USER_ID is required}
+      DEMO_USER_LOGIN_ID: ${DEMO_USER_LOGIN_ID:?DEMO_USER_LOGIN_ID is required}
+      DEMO_USER_DISPLAY_NAME: ${DEMO_USER_DISPLAY_NAME:?DEMO_USER_DISPLAY_NAME is required}
+      DEMO_USER_EMAIL: ${DEMO_USER_EMAIL:-}
       AI_API_KEY: ${AI_API_KEY:-}
       AI_MODEL: ${AI_MODEL:-}
       OBJECT_STORAGE_ENDPOINT: http://minio:9000

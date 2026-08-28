@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { DemoSessionProvider } from "@/domains/auth";
 import "./styles.css";
 
 export const metadata: Metadata = {
@@ -9,7 +10,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="ko">
-      <body>{children}</body>
+      <body>
+        <DemoSessionProvider>{children}</DemoSessionProvider>
+      </body>
     </html>
   );
 }
