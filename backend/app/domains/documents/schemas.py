@@ -1,6 +1,8 @@
 from datetime import date
 from uuid import UUID
 
+from pydantic import Field
+
 from app.core.enums import AnalysisSource, DocumentStatus, DocumentType, PaymentStatus
 from app.core.errors import ErrorBody
 from app.core.schema import ApiModel
@@ -14,7 +16,7 @@ class DocumentUploadResponse(ApiModel):
 
 class ExtractedPaymentResponse(ApiModel):
     name: str
-    amount: int | None = None
+    amount: int | None = Field(default=None, ge=0)
     due_date: date | None = None
     status: PaymentStatus
     source_text: str
@@ -28,7 +30,7 @@ class CancellationTermResponse(ApiModel):
 class DocumentExtractionResponse(ApiModel):
     document_type: DocumentType
     company: str | None = None
-    total_price: int | None = None
+    total_price: int | None = Field(default=None, ge=0)
     payments: list[ExtractedPaymentResponse]
     cancellation_terms: list[CancellationTermResponse]
     warnings: list[str]
