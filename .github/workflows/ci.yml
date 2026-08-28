@@ -72,8 +72,25 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      minio:
+        image: bitnamilegacy/minio:latest
+        env:
+          MINIO_ROOT_USER: minio
+          MINIO_ROOT_PASSWORD: miniosecret
+          MINIO_DEFAULT_BUCKETS: mairry
+        ports:
+          - 9000:9000
+        options: >-
+          --health-cmd "curl -f http://localhost:9000/minio/health/live"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       DATABASE_URL: postgresql+psycopg://mairry:mairry@localhost:5432/mairry_test
+      OBJECT_STORAGE_ENDPOINT: http://localhost:9000
+      OBJECT_STORAGE_BUCKET: mairry
+      OBJECT_STORAGE_ACCESS_KEY: minio
+      OBJECT_STORAGE_SECRET_KEY: miniosecret
     steps:
       - name: Checkout
         uses: actions/checkout@v4
