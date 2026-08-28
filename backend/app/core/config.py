@@ -15,7 +15,6 @@ class Settings(BaseSettings):
     demo_user_login_id: str = Field(min_length=1, max_length=50)
     demo_user_display_name: str = Field(min_length=1, max_length=50)
     demo_user_email: str | None = Field(max_length=255)
-    demo_user_id: UUID = UUID("00000000-0000-0000-0000-000000000001")
     # TODO(wedding_plan 도메인 병합 후 제거): wedding_plans/wedding_plan_members가 생기기 전까지
     # documents.wedding_plan_id/uploaded_by_member_id에 사용하는 고정값. models.py의 FK TODO 참고.
     demo_wedding_plan_id: UUID = UUID("00000000-0000-0000-0000-000000000002")
