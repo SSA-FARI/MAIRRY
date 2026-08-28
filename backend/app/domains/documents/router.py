@@ -41,10 +41,10 @@ def get_document(
 
 
 @router.post("/{document_id}/analyze", status_code=status.HTTP_202_ACCEPTED)
-def analyze_document(document_id: str) -> dict[str, str]:
-    return {"documentId": document_id, "status": "PROCESSING"}
+def analyze_document(document_id: UUID) -> dict[str, str]:
+    return {"documentId": str(document_id), "status": "PROCESSING"}
 
 
 @router.put("/{document_id}/confirm")
-def confirm_document(document_id: str) -> dict[str, str]:
-    return {"documentId": document_id, "status": "CONFIRMED"}
+def confirm_document(document_id: UUID) -> dict[str, str]:
+    return {"documentId": str(document_id), "status": "CONFIRMED"}

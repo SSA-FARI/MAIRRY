@@ -128,3 +128,17 @@ def test_get_document_returns_400_for_invalid_id_format() -> None:
 
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_analyze_document_returns_400_for_invalid_id_format() -> None:
+    response = client.post("/api/documents/not-a-uuid/analyze")
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_confirm_document_returns_400_for_invalid_id_format() -> None:
+    response = client.put("/api/documents/not-a-uuid/confirm")
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
