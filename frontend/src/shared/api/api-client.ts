@@ -37,7 +37,8 @@ export async function apiClient<T>(path: string, init?: RequestInit): Promise<T>
     }
     throw new ApiError(response.status, {
       code: "UNKNOWN_ERROR",
-      message: `API request failed: ${response.status}`,
+      message: "서버와 통신하는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
+      details: { status: response.status },
     });
   }
 

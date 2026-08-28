@@ -25,6 +25,10 @@ export function DocumentUpload({ onUploaded }: DocumentUploadProps) {
 
   const handleFile = useCallback(
     async (file: File) => {
+      if (status === "uploading") {
+        return;
+      }
+
       const validationError = findUploadValidationError(file);
       if (validationError) {
         setStatus("error");
@@ -49,8 +53,14 @@ export function DocumentUpload({ onUploaded }: DocumentUploadProps) {
         );
       }
     },
-    [onUploaded],
+    [onUploaded, status],
   );
+
+  const openFilePicker = useCallback(() => {
+    if (status !== "uploading") {
+      inputRef.current?.click();
+    }
+  }, [status]);
 
   const handleDrop = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
@@ -106,11 +116,11 @@ export function DocumentUpload({ onUploaded }: DocumentUploadProps) {
         }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={handleDrop}
-        onClick={() => inputRef.current?.click()}
+        onClick={openFilePicker}
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
-            inputRef.current?.click();
+            openFilePicker();
           }
         }}
         style={dropZoneStyle(isDragging, status === "error")}
@@ -124,18 +134,21 @@ export function DocumentUpload({ onUploaded }: DocumentUploadProps) {
           style={{ display: "none" }}
           aria-hidden="true"
         />
-        {status === "uploading" ? (
-          <p role="status">업로드 중입니다…</p>
-        ) : (
-          <>
-            <p style={{ fontWeight: 600, marginTop: 0 }}>
-              계약서 파일을 끌어다 놓거나 클릭해 선택하세요
-            </p>
-            <p style={{ color: "var(--muted)", fontSize: 14 }}>
-              PDF, JPG, PNG · 최대 {MAX_FILE_SIZE_MB}MB
-            </p>
-          </>
-        )}
+        {/* 자식이 드래그 히트테스트를 가로채 dragleave가 잘못 발생하는 걸 막는다 */}
+        <div style={{ pointerEvents: "none" }}>
+          {status === "uploading" ? (
+            <p role="status">업로드 중입니다…</p>
+          ) : (
+            <>
+              <p style={{ fontWeight: 600, marginTop: 0 }}>
+                계약서 파일을 끌어다 놓거나 클릭해 선택하세요
+              </p>
+              <p style={{ color: "var(--muted)", fontSize: 14 }}>
+                PDF, JPG, PNG · 최대 {MAX_FILE_SIZE_MB}MB
+              </p>
+            </>
+          )}
+        </div>
       </div>
       {status === "error" && errorMessage && (
         <p role="alert" style={{ color: "var(--danger)", marginBottom: 0 }}>
