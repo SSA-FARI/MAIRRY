@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     app_env: str = "local"
     database_url: str = "postgresql+psycopg://mairry:mairry@localhost:5432/mairry"
     demo_user_id: UUID = UUID("00000000-0000-0000-0000-000000000001")
+    # TODO(wedding_plan 도메인 병합 후 제거): wedding_plans/wedding_plan_members가 생기기 전까지
+    # documents.wedding_plan_id/uploaded_by_member_id에 사용하는 고정값. models.py의 FK TODO 참고.
+    demo_wedding_plan_id: UUID = UUID("00000000-0000-0000-0000-000000000002")
+    demo_member_id: UUID = UUID("00000000-0000-0000-0000-000000000003")
     ai_api_key: str = ""
     ai_model: str = ""
     object_storage_endpoint: str = "http://localhost:9000"

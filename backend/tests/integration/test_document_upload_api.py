@@ -1,0 +1,77 @@
+import uuid
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app.core.config import settings
+from app.core.database import SessionLocal
+from app.domains.documents.models import Document
+from app.domains.documents.storage import _DEFAULT_UPLOAD_DIR
+from app.main import app
+
+pytestmark = pytest.mark.integration
+
+client = TestClient(app)
+
+_PDF_CONTENT = b"%PDF-1.4\n%mock wedding hall contract for tests\n"
+
+
+def _delete_document(document_id: str) -> None:
+    session = SessionLocal()
+    try:
+        session.query(Document).filter(Document.id == uuid.UUID(document_id)).delete()
+        session.commit()
+    finally:
+        session.close()
+
+    stored_file = _DEFAULT_UPLOAD_DIR / f"{document_id}.pdf"
+    stored_file.unlink(missing_ok=True)
+
+
+def test_upload_pdf_creates_document_in_uploaded_status() -> None:
+    response = client.post(
+        "/api/documents",
+        files={"file": ("contract.pdf", _PDF_CONTENT, "application/pdf")},
+    )
+
+    try:
+        assert response.status_code == 201
+        payload = response.json()
+        assert payload["originalName"] == "contract.pdf"
+        assert payload["status"] == "UPLOADED"
+        uuid.UUID(payload["id"])
+    finally:
+        if response.status_code == 201:
+            _delete_document(response.json()["id"])
+
+
+def test_upload_rejects_unsupported_extension() -> None:
+    response = client.post(
+        "/api/documents",
+        files={"file": ("contract.docx", b"not a real document", "application/octet-stream")},
+    )
+
+    assert response.status_code == 415
+    assert response.json()["error"]["code"] == "UNSUPPORTED_MEDIA_TYPE"
+
+
+def test_upload_rejects_content_mismatching_extension() -> None:
+    response = client.post(
+        "/api/documents",
+        files={"file": ("contract.pdf", b"this is not actually a pdf", "application/pdf")},
+    )
+
+    assert response.status_code == 415
+    assert response.json()["error"]["code"] == "UNSUPPORTED_MEDIA_TYPE"
+
+
+def test_upload_rejects_file_larger_than_configured_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "max_upload_size_bytes", len(_PDF_CONTENT) - 1)
+
+    response = client.post(
+        "/api/documents",
+        files={"file": ("contract.pdf", _PDF_CONTENT, "application/pdf")},
+    )
+
+    assert response.status_code == 413
+    assert response.json()["error"]["code"] == "FILE_TOO_LARGE"
