@@ -1,4 +1,5 @@
 import uuid
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +18,9 @@ def build_storage_key(document_id: uuid.UUID, original_filename: str) -> str:
     return f"{document_id}{extension}"
 
 
+@lru_cache(maxsize=1)
 def _build_client() -> Any:
+    """Cached so every request-scoped MinioDocumentStorage reuses one connection pool."""
     return boto3.client(
         "s3",
         endpoint_url=settings.object_storage_endpoint,

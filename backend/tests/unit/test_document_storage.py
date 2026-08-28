@@ -5,7 +5,11 @@ import pytest
 from botocore.exceptions import ClientError
 
 from app.core.errors import AppError
-from app.integrations.storage.document_storage import MinioDocumentStorage, build_storage_key
+from app.integrations.storage.document_storage import (
+    MinioDocumentStorage,
+    _build_client,
+    build_storage_key,
+)
 
 
 def test_build_storage_key_uses_document_id_and_lowercased_extension() -> None:
@@ -48,3 +52,7 @@ def test_save_wraps_client_error_as_storage_error_without_leaking_key() -> None:
     assert excinfo.value.code.value == "STORAGE_ERROR"
     assert "secret-key" not in excinfo.value.message
     assert "secret-key" not in str(excinfo.value.details)
+
+
+def test_build_client_is_cached_so_requests_share_one_connection_pool() -> None:
+    assert _build_client() is _build_client()
