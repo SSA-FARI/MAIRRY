@@ -115,8 +115,9 @@ class WeddingPlanService:
                 message="WeddingPlan 초기 설정이 완료되지 않았습니다.",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+        initial_asset = self._plans.get_initial_asset(plan.id)
         return WeddingPlanRead(
             id=plan.id,
             wedding_date=plan.wedding_date,
-            available_asset=self._plans.available_asset(plan.id),
+            available_asset=initial_asset.amount if initial_asset is not None else 0,
         )

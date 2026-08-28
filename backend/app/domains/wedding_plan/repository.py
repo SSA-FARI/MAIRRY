@@ -52,6 +52,7 @@ class WeddingPlanRepository:
         self._session.add(asset)
 
     def available_asset(self, wedding_plan_id: UUID) -> int:
+        """Return the sum of every asset in a plan for finance calculations."""
         statement = select(func.coalesce(func.sum(Asset.amount), 0)).where(
             Asset.wedding_plan_id == wedding_plan_id
         )
