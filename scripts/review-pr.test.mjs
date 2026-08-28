@@ -89,6 +89,9 @@ test("creates inline comments only for validated Critical and Major findings", a
     if (requestUrl.includes("/pulls/1/reviews") && method === "GET") {
       return jsonResponse([]);
     }
+    if (requestUrl.includes("/pulls/1/comments") && method === "GET") {
+      return jsonResponse([]);
+    }
     if (requestUrl.endsWith("/pulls/1/reviews") && method === "POST") {
       inlineReviewRequest = JSON.parse(init.body);
       return jsonResponse({ id: 20 });
@@ -109,4 +112,198 @@ test("creates inline comments only for validated Critical and Major findings", a
   assert.match(inlineReviewRequest.comments[0].body, /\[Critical\]/);
   assert.match(issueCommentBody, /경계 테스트 누락/);
   assert.match(issueCommentBody, /코드 라인에 등록됨/);
+});
+
+test("does not repeat an inline finding already reported by the bot", async () => {
+  process.env.GEMINI_API_KEY = "test-key";
+  process.env.GITHUB_TOKEN = "test-token";
+  process.env.GITHUB_REPOSITORY = "test-owner/test-repository";
+  process.env.PR_NUMBER = "2";
+
+  const originalFetch = globalThis.fetch;
+  let inlineReviewCreated = false;
+  const diff = `diff --git a/example.js b/example.js
+--- a/example.js
++++ b/example.js
+@@ -1 +1,2 @@
+ existing();
++changed();
+`;
+  const repeatedFinding = {
+    summary: "이전에 보고한 문제만 발견했습니다.",
+    findings: [
+      {
+        severity: "Major",
+        path: "example.js",
+        line: 2,
+        title: "검증되지 않은 변경",
+        description: "변경값을 검증하지 않습니다.",
+        risk: "잘못된 값이 저장될 수 있습니다.",
+        fix: "저장 전에 값을 검증하세요.",
+        test: "검증 테스트를 추가하세요.",
+      },
+    ],
+  };
+
+  function jsonResponse(value, status = 200) {
+    return new Response(JSON.stringify(value), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  globalThis.fetch = async (url, init = {}) => {
+    const requestUrl = String(url);
+    const method = init.method ?? "GET";
+
+    if (requestUrl.includes("generativelanguage.googleapis.com")) {
+      return jsonResponse({
+        status: "completed",
+        steps: [
+          {
+            type: "model_output",
+            content: [{ type: "text", text: JSON.stringify(repeatedFinding) }],
+          },
+        ],
+      });
+    }
+    if (requestUrl.endsWith("/pulls/2") && init.headers?.Accept === "application/vnd.github.diff") {
+      return new Response(diff, { status: 200 });
+    }
+    if (requestUrl.endsWith("/pulls/2") && method === "GET") {
+      return jsonResponse({ head: { sha: "new-head" } });
+    }
+    if (requestUrl.includes("/issues/2/comments") && method === "GET") {
+      return jsonResponse([]);
+    }
+    if (requestUrl.includes("/issues/2/comments") && method === "POST") {
+      return jsonResponse({ id: 30 });
+    }
+    if (requestUrl.includes("/pulls/2/comments") && method === "GET") {
+      return jsonResponse([
+        {
+          id: 40,
+          path: "example.js",
+          user: { login: "github-actions[bot]" },
+          body: "**[Major] 검증되지 않은 변경**\n\n이전에 보고한 문제입니다.",
+        },
+      ]);
+    }
+    if (requestUrl.includes("/pulls/2/reviews") && method === "GET") {
+      return jsonResponse([]);
+    }
+    if (requestUrl.endsWith("/pulls/2/reviews") && method === "POST") {
+      inlineReviewCreated = true;
+      return jsonResponse({ id: 50 });
+    }
+
+    throw new Error(`Unexpected request: ${method} ${requestUrl}`);
+  };
+
+  try {
+    await import(`./review-pr.mjs?test=${Date.now()}`);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(inlineReviewCreated, false);
+});
+
+test("continues reviewing when fetching previous inline findings fails", async () => {
+  process.env.GEMINI_API_KEY = "test-key";
+  process.env.GITHUB_TOKEN = "test-token";
+  process.env.GITHUB_REPOSITORY = "test-owner/test-repository";
+  process.env.PR_NUMBER = "3";
+
+  const originalFetch = globalThis.fetch;
+  const originalWarn = console.warn;
+  let inlineReviewCreated = false;
+  let finalSummaryPosted = false;
+  const diff = `diff --git a/example.js b/example.js
+--- a/example.js
++++ b/example.js
+@@ -1 +1,2 @@
+ existing();
++changed();
+`;
+
+  function jsonResponse(value, status = 200) {
+    return new Response(JSON.stringify(value), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  globalThis.fetch = async (url, init = {}) => {
+    const requestUrl = String(url);
+    const method = init.method ?? "GET";
+
+    if (requestUrl.includes("generativelanguage.googleapis.com")) {
+      return jsonResponse({
+        status: "completed",
+        steps: [
+          {
+            type: "model_output",
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  summary: "새 문제를 발견했습니다.",
+                  findings: [
+                    {
+                      severity: "Major",
+                      path: "example.js",
+                      line: 2,
+                      title: "새로운 문제",
+                      description: "새로운 문제 설명",
+                      risk: "실패 위험",
+                      fix: "수정 필요",
+                      test: "회귀 테스트",
+                    },
+                  ],
+                }),
+              },
+            ],
+          },
+        ],
+      });
+    }
+    if (requestUrl.endsWith("/pulls/3") && init.headers?.Accept === "application/vnd.github.diff") {
+      return new Response(diff, { status: 200 });
+    }
+    if (requestUrl.endsWith("/pulls/3") && method === "GET") {
+      return jsonResponse({ head: { sha: "fault-tolerant-head" } });
+    }
+    if (requestUrl.includes("/pulls/3/comments") && method === "GET") {
+      return jsonResponse({ message: "rate limit exceeded" }, 403);
+    }
+    if (requestUrl.includes("/issues/3/comments") && method === "GET") {
+      return jsonResponse([]);
+    }
+    if (requestUrl.includes("/issues/3/comments") && method === "POST") {
+      const body = JSON.parse(init.body).body;
+      finalSummaryPosted ||= body.includes("새로운 문제");
+      return jsonResponse({ id: 60 });
+    }
+    if (requestUrl.includes("/pulls/3/reviews") && method === "GET") {
+      return jsonResponse([]);
+    }
+    if (requestUrl.endsWith("/pulls/3/reviews") && method === "POST") {
+      inlineReviewCreated = true;
+      return jsonResponse({ id: 70 });
+    }
+
+    throw new Error(`Unexpected request: ${method} ${requestUrl}`);
+  };
+  console.warn = () => {};
+
+  try {
+    await import(`./review-pr.mjs?test=${Date.now()}`);
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.warn = originalWarn;
+  }
+
+  assert.equal(inlineReviewCreated, true);
+  assert.equal(finalSummaryPosted, true);
 });
