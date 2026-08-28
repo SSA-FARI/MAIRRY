@@ -42,5 +42,6 @@ export async function apiClient<T>(path: string, init?: RequestInit): Promise<T>
     });
   }
 
-  return response.json() as Promise<T>;
+  const text = await response.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }
