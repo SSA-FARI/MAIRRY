@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useDemoSession } from "@/domains/auth";
 import { formatWon } from "@/shared/lib/money";
 
