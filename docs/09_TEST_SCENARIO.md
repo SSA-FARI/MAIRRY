@@ -42,6 +42,10 @@
 
 | ID | 대상 | 시나리오 | 기대 결과 |
 |---|---|---|---|
+| AUTH-01 | Demo Login | 본문 없이 로그인 | 설정된 Demo User 공개 프로필 반환 |
+| AUTH-02 | Demo Login | Demo User가 없는 상태에서 연속 요청 | bcrypt 해시를 가진 사용자 한 명만 생성 |
+| AUTH-03 | Demo Login | 동시 로그인 요청 | UNIQUE 충돌 없이 동일 사용자 한 명 반환 |
+| AUTH-04 | Demo Login | 임의 userId를 본문으로 전달 | 전달값을 사용하지 않고 설정된 Demo User 반환 |
 | PLAN-01 | 초기 설정 | 정상 날짜·금액 저장 | 대시보드 이동 및 값 유지 |
 | PLAN-02 | 초기 설정 | 음수 자산 입력 | 저장 차단 및 오류 표시 |
 | DOC-01 | 업로드 | PDF 업로드 | UPLOADED 후 분석 가능 |

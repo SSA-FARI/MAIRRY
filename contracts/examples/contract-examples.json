@@ -3,6 +3,17 @@
     "Health": [
       {"status": "ok"}
     ],
+    "DemoLoginResponse": [
+      {
+        "user": {
+          "id": "00000000-0000-0000-0000-000000000001",
+          "loginId": "demo",
+          "displayName": "Demo User",
+          "email": null
+        },
+        "mode": "DEMO"
+      }
+    ],
     "WeddingPlan": [
       {
         "id": "7d985a2f-13ab-4fab-a3d7-d3ca8d696977",

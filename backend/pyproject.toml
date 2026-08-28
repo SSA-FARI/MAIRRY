@@ -8,6 +8,7 @@ version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
   "alembic>=1.16.0",
+  "bcrypt>=4.2.0",
   "fastapi>=0.116.0",
   "uvicorn[standard]>=0.35.0",
   "pydantic-settings>=2.10.0",
