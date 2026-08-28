@@ -14,7 +14,8 @@ dependencies = [
   "pydantic-settings>=2.10.0",
   "sqlalchemy>=2.0.0",
   "psycopg[binary]>=3.2.0",
-  "python-multipart>=0.0.20"
+  "python-multipart>=0.0.20",
+  "boto3>=1.35.0"
 ]
 
 [project.optional-dependencies]
@@ -35,6 +36,19 @@ markers = ["integration: requires external infrastructure such as PostgreSQL"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = [
+  "fastapi.Depends",
+  "fastapi.Query",
+  "fastapi.Path",
+  "fastapi.Body",
+  "fastapi.Header",
+  "fastapi.Cookie",
+  "fastapi.File",
+  "fastapi.Form",
+  "fastapi.Security",
+]
 
 [tool.setuptools.packages.find]
 include = ["app*", "ai*"]

@@ -89,6 +89,10 @@ Focus exclusively on actionable correctness and risk findings:
 - exposure of financial information, contract source text, personal information, credentials, or sensitive logs
 - AI output being trusted before user confirmation or AI changing Backend Tool amounts, dates, or statuses
 
+Before reporting an API or JSON Schema mismatch, follow the exact $ref used by the changed schema and
+verify the referenced type's current fields. Do not infer a relationship from nearby schema definitions or
+from a similarly named Confirmed type. Report only behavior present in the supplied final PR diff.
+
 Do not report formatting, naming preferences, import ordering, whitespace, or other style-only issues. Do not praise the code and do not provide a general summary.
 
 Write the entire review in Korean. Keep file paths, code identifiers, API and schema names, literal values, and code snippets in their original form. Use English only where preserving an original technical term is necessary.
@@ -349,7 +353,43 @@ async function upsertReviewComment(review) {
   console.log(`Created review comment ${created.id}`);
 }
 
-function prepareFindings(review, diff) {
+function findingKey(finding) {
+  return `${finding.path}:${finding.title.trim().replace(/\s+/g, " ").toLowerCase()}`;
+}
+
+async function fetchPreviouslyReportedInlineFindingKeys() {
+  try {
+    const keys = new Set();
+    for (let page = 1; ; page += 1) {
+      const comments = await githubRequest(
+        `/repos/${repository}/pulls/${pullRequestNumber}/comments?per_page=100&page=${page}`,
+      );
+      if (!Array.isArray(comments)) {
+        throw new TypeError("GitHub review comments response must be an array");
+      }
+      for (const comment of comments) {
+        if (comment.user?.login !== REVIEW_COMMENT_AUTHOR || typeof comment.body !== "string") {
+          continue;
+        }
+        const title = comment.body.match(/^\*\*\[(?:Critical|Major)\]\s+(.+?)\*\*/m)?.[1];
+        if (typeof comment.path === "string" && title) {
+          keys.add(findingKey({ path: comment.path, title }));
+        }
+      }
+      if (comments.length < 100) {
+        return keys;
+      }
+    }
+  } catch (error) {
+    console.warn(
+      "Failed to fetch previous inline findings; continuing without deduplication",
+      error,
+    );
+    return new Set();
+  }
+}
+
+function prepareFindings(review, diff, previouslyReportedKeys = new Set()) {
   const changedLines = collectChangedLines(diff);
   const findings = review.findings.map((finding) => ({
     ...finding,
@@ -359,7 +399,10 @@ function prepareFindings(review, diff) {
       changedLines.get(finding.path)?.has(finding.line) === true,
   }));
   const inlineFindings = findings
-    .filter((finding) => finding.inlineEligible)
+    .filter(
+      (finding) =>
+        finding.inlineEligible && !previouslyReportedKeys.has(findingKey(finding)),
+    )
     .slice(0, MAX_INLINE_COMMENTS);
   const inlineKeys = new Set(
     inlineFindings.map((finding) => `${finding.path}:${finding.line}:${finding.title}`),
@@ -461,8 +504,15 @@ if (!diff.trim()) {
   );
 
   try {
-    const review = await reviewWithGemini(diff);
-    const { findings, inlineFindings } = prepareFindings(review, diff);
+    const [review, previouslyReportedKeys] = await Promise.all([
+      reviewWithGemini(diff),
+      fetchPreviouslyReportedInlineFindingKeys(),
+    ]);
+    const { findings, inlineFindings } = prepareFindings(
+      review,
+      diff,
+      previouslyReportedKeys,
+    );
     let inlineWarning = "";
     let summaryFindings = findings;
 
