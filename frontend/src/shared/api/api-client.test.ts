@@ -59,4 +59,18 @@ describe("apiClient", () => {
       message: "서버와 통신하는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
     } satisfies Partial<ApiError>);
   });
+
+  it("forwards headers passed as a Headers instance instead of dropping them", async () => {
+    let receivedAuthorization: string | null = null;
+    server.use(
+      http.get(`${baseUrl}/health`, ({ request }) => {
+        receivedAuthorization = request.headers.get("Authorization");
+        return HttpResponse.json({ status: "ok" });
+      }),
+    );
+
+    await apiClient("/health", { headers: new Headers({ Authorization: "Bearer test" }) });
+
+    expect(receivedAuthorization).toBe("Bearer test");
+  });
 });

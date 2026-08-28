@@ -133,6 +133,7 @@ export function DocumentUpload({ onUploaded }: DocumentUploadProps) {
           onClick={(event) => event.stopPropagation()}
           style={{ display: "none" }}
           aria-hidden="true"
+          data-testid="document-upload-input"
         />
         {/* 자식이 드래그 히트테스트를 가로채 dragleave가 잘못 발생하는 걸 막는다 */}
         <div style={{ pointerEvents: "none" }}>

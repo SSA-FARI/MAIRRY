@@ -9,6 +9,9 @@ export function findUploadValidationError(file: File): string | null {
   if (!ALLOWED_EXTENSIONS.includes(extension)) {
     return "PDF, JPG, PNG 파일만 업로드할 수 있습니다.";
   }
+  if (file.size === 0) {
+    return "빈 파일은 업로드할 수 없습니다.";
+  }
   if (file.size > MAX_FILE_SIZE_BYTES) {
     return `파일 용량은 ${MAX_FILE_SIZE_MB}MB 이하여야 합니다.`;
   }

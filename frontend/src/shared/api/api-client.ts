@@ -20,13 +20,23 @@ export class ApiError extends Error {
   }
 }
 
+function toHeaderRecord(headers: HeadersInit | undefined): Record<string, string> {
+  if (!headers) {
+    return {};
+  }
+  if (headers instanceof Headers) {
+    return Object.fromEntries(headers.entries());
+  }
+  return Array.isArray(headers) ? Object.fromEntries(headers) : headers;
+}
+
 export async function apiClient<T>(path: string, init?: RequestInit): Promise<T> {
   const isFormData = init?.body instanceof FormData;
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers: {
       ...(isFormData ? {} : { "Content-Type": "application/json" }),
-      ...init?.headers,
+      ...toHeaderRecord(init?.headers),
     },
   });
 
