@@ -120,6 +120,7 @@ export function DocumentUpload({ onUploaded }: DocumentUploadProps) {
           type="file"
           accept={ALLOWED_EXTENSIONS.join(",")}
           onChange={handleInputChange}
+          onClick={(event) => event.stopPropagation()}
           style={{ display: "none" }}
           aria-hidden="true"
         />
