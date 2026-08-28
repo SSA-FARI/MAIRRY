@@ -14,12 +14,12 @@ dependencies = [
   "sqlalchemy>=2.0.0",
   "psycopg[binary]>=3.2.0",
   "python-multipart>=0.0.20",
-  "boto3>=1.35.0"
+  "boto3>=1.35.0",
+  "httpx>=0.28.0"
 ]
 
 [project.optional-dependencies]
 dev = [
-  "httpx>=0.28.0",
   "jsonschema>=4.25.0",
   "openapi-spec-validator>=0.7.2",
   "PyYAML>=6.0.2",
@@ -53,4 +53,5 @@ extend-immutable-calls = [
 include = ["app*", "ai*"]
 
 [tool.setuptools.package-data]
+"ai" = ["prompts/*.md"]
 "ai.document_extraction" = ["fallback_assets/*.fixture", "fallback_assets/*.json"]

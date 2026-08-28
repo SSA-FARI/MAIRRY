@@ -39,6 +39,11 @@ class InvalidOutputProvider:
         }
 
 
+class RejectedOutputProvider:
+    async def extract_document(self, file_path: Path) -> dict[str, Any]:
+        raise AiOutputError("provider output details that must not leak")
+
+
 class UnexpectedFailureProvider:
     async def extract_document(self, file_path: Path) -> dict[str, Any]:
         raise ConnectionResetError("network details that must not leak")
@@ -67,7 +72,13 @@ def test_live_provider_result_has_priority_over_demo_fallback() -> None:
 
 @pytest.mark.parametrize(
     "provider",
-    [None, FailingProvider(), InvalidOutputProvider(), UnexpectedFailureProvider()],
+    [
+        None,
+        FailingProvider(),
+        InvalidOutputProvider(),
+        RejectedOutputProvider(),
+        UnexpectedFailureProvider(),
+    ],
 )
 def test_registered_document_uses_fallback_when_provider_is_unavailable(provider: Any) -> None:
     result = asyncio.run(analyze_document(DEFAULT_DEMO_DOCUMENT_PATH, provider))
@@ -104,6 +115,18 @@ def test_invalid_provider_output_is_rejected_without_matching_fallback(tmp_path:
 
     with pytest.raises(AiOutputError, match="invalid extraction"):
         asyncio.run(analyze_document(document_path, InvalidOutputProvider()))
+
+
+def test_provider_output_error_keeps_its_category_without_matching_fallback(
+    tmp_path: Path,
+) -> None:
+    document_path = tmp_path / "unknown-document.pdf"
+    document_path.write_bytes(b"unknown document")
+
+    with pytest.raises(AiOutputError, match="invalid extraction") as error:
+        asyncio.run(analyze_document(document_path, RejectedOutputProvider()))
+
+    assert "provider output details" not in str(error.value)
 
 
 def test_fallback_lookup_failure_does_not_hide_provider_error(

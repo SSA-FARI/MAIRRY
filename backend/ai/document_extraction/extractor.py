@@ -10,14 +10,14 @@ from ai.document_extraction.fallback import (
     DemoFallbackRegistry,
 )
 from ai.document_extraction.schemas import DocumentAnalysisResult, DocumentExtraction
-from ai.providers.base import AiProvider
+from ai.providers.base import DocumentExtractionProvider
 
 logger = logging.getLogger(__name__)
 
 
 async def analyze_document(
     file_path: Path,
-    provider: AiProvider | None = None,
+    provider: DocumentExtractionProvider | None = None,
     *,
     enable_demo_fallback: bool = True,
     fallback_registry: DemoFallbackRegistry = DEFAULT_DEMO_FALLBACK_REGISTRY,
@@ -29,6 +29,9 @@ async def analyze_document(
     else:
         try:
             payload = await provider.extract_document(file_path)
+        except AiOutputError:
+            logger.warning("AI provider output validation failed")
+            provider_error = AiOutputError("AI provider returned an invalid extraction")
         except Exception as exc:  # noqa: BLE001 - provider boundary normalizes SDK failures
             logger.warning(
                 "AI provider request failed: errorType=%s",
