@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.errors import register_exception_handlers
+from app.domains.auth.router import router as auth_router
 from app.domains.chat.router import router as chat_router
 from app.domains.contracts.router import router as contracts_router
 from app.domains.documents.router import router as documents_router
@@ -26,6 +27,7 @@ def health() -> dict[str, str]:
 
 
 app.include_router(wedding_plan_router, prefix="/api")
+app.include_router(auth_router, prefix="/api/v1")
 app.include_router(documents_router, prefix="/api")
 app.include_router(contracts_router, prefix="/api")
 app.include_router(finance_router, prefix="/api")

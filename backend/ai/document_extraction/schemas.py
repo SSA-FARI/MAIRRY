@@ -26,3 +26,8 @@ class DocumentExtraction(AiContractModel):
     payments: list[ExtractedPayment]
     cancellation_terms: list[CancellationTerm]
     warnings: list[str]
+
+
+class DocumentAnalysisResult(AiContractModel):
+    extraction: DocumentExtraction
+    analysis_source: Literal["LIVE_AI", "DEMO_FALLBACK"]

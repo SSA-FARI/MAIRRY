@@ -1,4 +1,6 @@
-import Link from "next/link";
+"use client";
+
+import { useDemoSession } from "@/domains/auth";
 import { formatWon } from "@/shared/lib/money";
 
 const preview = {
@@ -9,6 +11,8 @@ const preview = {
 };
 
 export function DashboardPage() {
+  const { session } = useDemoSession();
+
   return (
     <main style={{ maxWidth: 1200, margin: "0 auto", padding: 32 }}>
       <header
@@ -23,6 +27,11 @@ export function DashboardPage() {
         <div>
           <p style={{ color: "var(--primary)", fontWeight: 700 }}>MAIRRY</p>
           <h1>우리 결혼 자금 현황</h1>
+          {session !== null && (
+            <p className="dashboard-user" aria-label="현재 데모 사용자">
+              {session.user.displayName}님, 반가워요.
+            </p>
+          )}
           <p style={{ color: "var(--muted)" }}>
             계약서를 등록하면 남은 지급 일정과 예상 잔액을 계산합니다.
           </p>
