@@ -113,7 +113,8 @@ Demo 설정이 누락되거나 잘못된 경우 애플리케이션 시작을 거
 {"weddingDate": "2027-05-15", "availableAsset": 30000000}
 ```
 
-`weddingDate`는 유효한 날짜, `availableAsset`은 0 이상의 정수다.
+`weddingDate`는 유효한 날짜, `availableAsset`은 원 단위 BIGINT 범위의 정수
+(`0`~`9,223,372,036,854,775,807`)다.
 
 응답 200:
 
