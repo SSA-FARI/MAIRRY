@@ -1,9 +1,17 @@
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.domains.documents.schemas import DocumentUploadResponse
-from app.domains.documents.service import DocumentUploadService, get_document_upload_service
+from app.domains.documents.schemas import DocumentDetailResponse, DocumentUploadResponse
+from app.domains.documents.service import (
+    DocumentQueryService,
+    DocumentUploadService,
+    build_document_detail_response,
+    get_document_query_service,
+    get_document_upload_service,
+)
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -20,6 +28,16 @@ async def upload_document(
         original_name=document.original_filename,
         status=document.analysis_status,
     )
+
+
+@router.get("/{document_id}", response_model=DocumentDetailResponse)
+def get_document(
+    document_id: UUID,
+    db: Session = Depends(get_db),
+    service: DocumentQueryService = Depends(get_document_query_service),
+) -> DocumentDetailResponse:
+    document = service.get(db, document_id)
+    return build_document_detail_response(document)
 
 
 @router.post("/{document_id}/analyze", status_code=status.HTTP_202_ACCEPTED)
