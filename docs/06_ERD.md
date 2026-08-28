@@ -411,87 +411,226 @@ FAILED 문서에서 사용자가 직접 입력한 조건은 AI 근거가 없으�
 
 ### 테이블 명세
 
-| 컬럼 | 타입 | Null | 제약/설명 |
-|---|---|---:|---|
-| id | UUID | N | PK |
-| wedding_plan_id | UUID | N | FK → WEDDING_PLAN.id |
-| document_id | UUID | N | FK → DOCUMENT.id, UNIQUE |
-| document_type | VARCHAR(30) | N | `WEDDING_HALL`, `UNKNOWN` |
-| company | VARCHAR(200) | N | 공백 문자열 금지 |
-| total_price | BIGINT | N | `>= 0`, 원 단위 |
-| cancellation_terms | JSONB | N | `{summary, sourceText}` 배열 |
-| status | VARCHAR(30) | N | MVP 저장값 `CONFIRMED` |
-| confirmed_at | TIMESTAMPTZ | N | 사용자 확정 시각 |
-| created_at | TIMESTAMPTZ | N | 생성 시각 |
-| updated_at | TIMESTAMPTZ | N | 수정 시각 |
+| 컬럼 | 타입 | NULL | 제약조건 | 설명 |
+| --- | --- | --- | --- | --- |
+| `id` | UUID | X | PK | 문서 식별자 |
+| `wedding_plan_id` | UUID | X | FK | 소유 WeddingPlan |
+| `uploaded_by_member_id` | UUID | X | FK | 문서 업로드 Member |
+| `document_type` | VARCHAR(50) | O | - | 문서 종류 |
+| `original_filename` | VARCHAR(255) | X | - | 원본 파일명 |
+| `file_url` | TEXT | X | - | Object Storage 경로 |
+| `content_type` | VARCHAR(100) | O | - | MIME Type |
+| `extraction_raw` | JSONB | O | - | AI 최초 분석 결과 |
+| `analysis_status` | ENUM | X | DEFAULT UPLOADED | AI 분석 상태 |
+| `analysis_source` | ENUM | X | DEFAULT LIVE_AI | LIVE_AI / DEMO_FALLBACK |
+| `created_at` | TIMESTAMPTZ | X | DEFAULT now() | 업로드일 |
+| `updated_at` | TIMESTAMPTZ | X | DEFAULT now() | 수정일 |
 
-검수 중 값은 DOCUMENT와 클라이언트 편집 상태에 유지한다. CONTRACT는 확정 트랜잭션에서만
-생성하므로 MVP DB에 DRAFT 행을 만들지 않는다. 문서 하나는 최대 한 계약으로 확정된다.
+### `analysis_status`
 
-### PAYMENT
-
-| 컬럼 | 타입 | Null | 제약/설명 |
-|---|---|---:|---|
-| id | UUID | N | PK |
-| contract_id | UUID | N | FK → CONTRACT.id |
-| name | VARCHAR(100) | N | 공백 문자열 금지 |
-| amount | BIGINT | Y | null 또는 `>= 0`, 원 단위 |
-| due_date | DATE | Y | 지급일 미확인 시 null |
-| payment_status | VARCHAR(20) | N | `PAID`, `UNPAID`, `UNKNOWN` |
-| source_text | TEXT | N | 계약 원문 근거, 없으면 빈 문자열 |
-| display_order | INTEGER | N | `>= 0`, 원문/검수 순서 |
-| created_at | TIMESTAMPTZ | N | 생성 시각 |
-| updated_at | TIMESTAMPTZ | N | 수정 시각 |
-
-금융 계산에는 `CONTRACT.status = CONFIRMED`, `payment_status = UNPAID`, `amount IS NOT NULL`인
-항목만 포함한다. `due_date IS NULL`인 항목도 합계에는 포함하지만 날짜순 타임라인에서는 확인 필요
-영역으로 분리한다.
-
-## 상태 전이
-
-```mermaid
-stateDiagram-v2
-    [*] --> UPLOADED: upload
-    UPLOADED --> PROCESSING: analyze
-    PROCESSING --> REVIEW_REQUIRED: success
-    PROCESSING --> FAILED: failure
-    FAILED --> PROCESSING: retry
-    REVIEW_REQUIRED --> CONFIRMED: confirm
-    FAILED --> CONFIRMED: manual confirm
+```
+UPLOADED
+   ↓
+PROCESSING
+   ↓
+REVIEW_REQUIRED
+   ↓
+CONFIRMED
 ```
 
-- PROCESSING 재분석, REVIEW_REQUIRED 재분석, CONFIRMED 재확정은 409 대상이다.
-- CONFIRMED 전환과 Contract·Payment 생성은 하나의 트랜잭션이다.
-- 실패 시 Contract나 Payment 일부가 남아서는 안 된다.
+실패:
 
-## 무결성과 인덱스
+```
+PROCESSING
+   ↓
+FAILED
+```
 
-필수 제약:
+### 특징
 
-- `UNIQUE wedding_plan(user_id)`
-- `UNIQUE document(storage_key)`
-- `UNIQUE contract(document_id)`
-- 금액은 0 이상, `document.size_bytes`는 0보다 큰 CHECK
-- 상태 컬럼은 DB enum 또는 CHECK로 허용값 제한
-- 확정 시 WeddingPlan과 Document의 사용자 소유권 일치 검증
+문서 업로더는 반드시 해당 문서와 동일한 WeddingPlan 소속이어야 한다. Contract 확정 시
+`contracts.document_id`가 이 Document를 참조하며, 두 리소스의 WeddingPlan 일치 여부를 Service에서
+검증한다. MVP에서는 Document 한 건이 Contract 한 건으로 확정되므로 `contracts.document_id`에
+UNIQUE를 둔다.
 
-권장 인덱스:
+처음 업로드할 때는:
 
-- `document(user_id, created_at DESC)`
-- `contract(wedding_plan_id, status)`
-- `payment(contract_id, payment_status, due_date)`
+```
+Document 생성
+```
 
-## 삭제와 보존
+AI가 문서를 분석하고 사용자가 확정하면:
 
-MVP 공개 API에는 삭제가 없다. 운영상 삭제가 필요하면 원본 객체와 DB 메타데이터를 함께 처리하고,
-확정 데이터는 Payment → Contract → Document 순서로 명시적으로 삭제한다. User 또는 WeddingPlan의
-무조건 CASCADE 삭제는 금지한다.
+```
+Contract 생성
+        ↓
+Contract.document_id로 Document 참조
+        ↓
+Document CONFIRMED 전환
+```
 
-## 저장하지 않는 파생값
+하는 구조다.
 
-- `remainingExpense = SUM(확정 계약의 금액이 있는 UNPAID payment.amount)`
-- `expectedBalance = availableAsset - remainingExpense`
-- `nearestPayment = 지급일이 있는 대상 중 기준일 이후 가장 이른 항목`
-- `shortageAmount = MAX(0, -simulatedExpectedBalance)`
+---
 
-시뮬레이션은 요청별로 계산하며 원본 계획과 지급항목을 변경하지 않는다.
+### `extraction_raw`의 역할
+
+이 컬럼은 상당히 중요하다.
+
+AI가 최초로 다음처럼 분석했다고 하자.
+
+```
+{
+  "documentType":"WEDDING_HALL",
+  "vendorName":"A웨딩홀",
+  "totalAmount":23000000,
+  "payments": [
+    {
+      "label":"잔금",
+      "amount":22000000
+    }
+  ]
+}
+```
+
+그런데 사용자가 검수해보니 실제 잔금은:
+
+```
+20,000,000원
+```
+
+이었다.
+
+그러면:
+
+```
+documents.extraction_raw
+→ 22,000,000
+
+payments.amount
+→ 20,000,000
+```
+
+이 된다.
+
+즉:
+
+```
+AI가 읽은 값
+        ↓
+extraction_raw
+
+사용자가 확인
+        ↓
+실제 서비스 데이터
+        ↓
+Contract
+Payment
+CancellationTerm
+```
+
+이렇게 분리한다.
+
+**금융 계산에서 `extraction_raw`를 직접 사용하면 안 된다.**
+
+---
+
+## document_chunks
+
+### 역할
+
+업로드된 계약서의 자연어 질의응답을 위한 **RAG 데이터**를 저장한다.
+
+### 테이블 명세
+
+| 컬럼 | 타입 | NULL | 제약조건 | 설명 |
+| --- | --- | --- | --- | --- |
+| `id` | UUID | X | PK | Chunk 식별자 |
+| `wedding_plan_id` | UUID | X | FK | 소유 WeddingPlan |
+| `document_id` | UUID | X | FK | 원본 문서 |
+| `chunk_index` | INT | X | UNIQUE 조합 | Chunk 순서 |
+| `page_number` | INT | O | - | 원본 페이지 |
+| `content` | TEXT | X | - | Chunk 텍스트 |
+| `embedding` | VECTOR(1536) | O | - | Embedding 벡터 |
+| `created_at` | TIMESTAMPTZ | X | DEFAULT now() | 생성일 |
+
+`document_chunks.wedding_plan_id`와 원본 `documents.wedding_plan_id`는 반드시 일치해야 하며, 이 일치 여부는 저장 시 서비스 레이어에서 검증한다.
+
+## 권한 및 WeddingPlan 격리 원칙
+
+- 모든 조회·수정·삭제 API는 요청 사용자가 해당 `wedding_plan_id`의 `wedding_plan_members`인지 먼저 검증한다.
+- `uploaded_by_member_id`, `confirmed_by_member_id`, `owner_member_id`는 대상 리소스와 **동일한 WeddingPlan 소속**이어야 한다.
+- ERD 관계는 단일 FK로 유지하고, WeddingPlan 소속 일치 여부는 서비스 레이어에서 검증한다.
+- RAG 검색도 `wedding_plan_id`로 먼저 필터링한 뒤 벡터 유사도 검색을 수행한다.
+
+## 저장 원칙
+
+- 금액은 원 단위 BIGINT로 저장한다.
+- 지급일·결혼일은 DATE, 생성·수정 시각은 TIMESTAMPTZ를 사용한다.
+- AI 최초 분석 결과는 documents.extraction_raw에 JSONB로 저장한다.
+- 사용자 확정값은 contracts, payments, cancellation_terms에 저장한다.
+- 금융 계산에는 확정된 Contract의 Payment만 사용한다.
+- AI 추출 단계의 Payment `amount`는 NULL일 수 있지만 확정 Payment는 NOT NULL이고 0 이상이다.
+- MVP의 WEDDING_HALL 계약은 Payment가 1개 이상이어야 확정할 수 있다.
+- `total_price`와 Payment 합계가 달라도 확정을 허용하고 warning으로 안내한다.
+- `total_price`나 Payment 금액을 서로 역산하거나 자동 보정하지 않는다.
+- due_date = NULL이어도 금액이 확정되면 지출 합계에는 포함하고, 타임라인에서는 지급일 확인 필요로 표시한다.
+- AI 장애 대응이 필요하면 analysis_source = LIVE_AI / DEMO_FALLBACK으로 구분한다.
+
+### 금융 계산 기준
+
+- 금융 요약의 Single Source of Truth는 확정된 Contract에 속한 Payment다.
+- `remaining_expense`는 `amount`가 있는 UNPAID Payment의 합계로 계산한다.
+- `expected_balance`는 `available_asset - remaining_expense`로 계산한다.
+- `contract.total_price`는 계약서상 총액을 표시하기 위한 값이며 금융 잔액 계산에 직접 사용하지
+  않는다.
+- AI 추출 Payment의 `amount`가 NULL이면 `contract.total_price`에서 역산하거나 대체하지 않고
+  검수 화면에서 사용자 입력을 요구한다.
+- `total_price`와 Payment 합계가 달라도 두 값을 자동 보정하지 않고 검수 화면에서 warning으로
+  안내한다.
+- 계약 총액과 지급 일정 합계는 의미가 다른 값이므로 UI에서 동일한 금융 지표처럼 표시하지
+  않는다.
+
+확정 처리
+~~~text
+사용자 확정
+   ↓
+Contract / Payment 값 검증
+- company 필수
+- total_price는 0 이상
+- Payment는 1개 이상
+- Payment.amount는 NOT NULL이고 0 이상
+   ↓
+Contract 생성
+Payment 생성
+CancellationTerm 생성
+Document 연결 및 CONFIRMED 변경
+~~~
+위 과정은 하나의 트랜잭션으로 처리하며, 검증 또는 저장 중 하나라도 실패하면 전체 롤백한다.
+
+MVP에서는 확정 Contract의 Payment 추가·수정·삭제 API를 제공하지 않는다.
+
+## 인덱스 및 UNIQUE
+
+- WEDDING_PLAN_MEMBERS(wedding_plan_id, user_id) UNIQUE
+- ASSETS(wedding_plan_id)
+- CONTRACTS(wedding_plan_id, status, confirmed_at)
+- CONTRACTS(document_id) UNIQUE
+- PAYMENTS(contract_id, status, due_date)
+- CANCELLATION_TERMS(contract_id)
+- DOCUMENTS(wedding_plan_id, analysis_status, created_at)
+- DOCUMENT_CHUNKS(wedding_plan_id)
+- DOCUMENT_CHUNKS(document_id, chunk_index) UNIQUE
+
+## 필수 검증 테스트
+
+- 확정 도중 Contract, Payment, CancellationTerm 또는 Document 갱신 하나라도 실패하면 전체
+  트랜잭션이 롤백되는지 확인한다.
+- `amount=NULL` 또는 빈 payments 요청은 확정되지 않고 전체 트랜잭션이 롤백되는지 확인한다.
+- `total_price`와 Payment 합계가 불일치해도 warning과 함께 확정되는지 확인한다.
+
+## 삭제
+
+- 확정 전 Document 삭제 시 관련 DocumentChunk도 함께 삭제한다.
+- Contract와 연결 데이터의 삭제 API는 MVP에서 제공하지 않는다.
+- 원본 Document 삭제 정책은 Document 담당 범위에서 관리하며 CONFIRMED 문서는 임의 삭제하지 않는다.
