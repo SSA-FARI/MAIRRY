@@ -1,5 +1,4 @@
 import uuid
-from pathlib import Path
 
 from fastapi import UploadFile
 from sqlalchemy.orm import Session
@@ -7,12 +6,13 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.domains.documents.models import Document
 from app.domains.documents.repository import DocumentRepository
-from app.domains.documents.storage import DocumentStoragePort, InterimLocalDocumentStorage
+from app.domains.documents.storage import DocumentStoragePort
 from app.domains.documents.validation import (
     ensure_signature_matches,
     read_upload_within_limit,
     resolve_expected_content_type,
 )
+from app.integrations.storage.document_storage import MinioDocumentStorage, build_storage_key
 
 
 class DocumentUploadService:
@@ -27,7 +27,7 @@ class DocumentUploadService:
         ensure_signature_matches(content, content_type)
 
         document_id = uuid.uuid4()
-        storage_key = f"{document_id}{Path(original_filename).suffix.lower()}"
+        storage_key = build_storage_key(document_id, original_filename)
         file_url = self._storage.save(storage_key, content, content_type)
 
         document = Document(
@@ -47,5 +47,5 @@ class DocumentUploadService:
 def get_document_upload_service() -> DocumentUploadService:
     return DocumentUploadService(
         repository=DocumentRepository(),
-        storage=InterimLocalDocumentStorage(),
+        storage=MinioDocumentStorage(),
     )

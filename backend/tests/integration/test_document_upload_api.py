@@ -1,12 +1,13 @@
 import uuid
 
 import pytest
+from botocore.exceptions import ClientError
 from fastapi.testclient import TestClient
 
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.domains.documents.models import Document
-from app.domains.documents.storage import _DEFAULT_UPLOAD_DIR
+from app.integrations.storage.document_storage import _build_client
 from app.main import app
 
 pytestmark = pytest.mark.integration
@@ -24,8 +25,12 @@ def _delete_document(document_id: str) -> None:
     finally:
         session.close()
 
-    stored_file = _DEFAULT_UPLOAD_DIR / f"{document_id}.pdf"
-    stored_file.unlink(missing_ok=True)
+    try:
+        _build_client().delete_object(
+            Bucket=settings.object_storage_bucket, Key=f"{document_id}.pdf"
+        )
+    except ClientError:
+        pass
 
 
 def test_upload_pdf_creates_document_in_uploaded_status() -> None:
