@@ -1,0 +1,28 @@
+{
+  "documentType": "WEDDING_HALL",
+  "company": "A웨딩홀",
+  "totalPrice": 23000000,
+  "payments": [
+    {
+      "name": "계약금",
+      "amount": 3000000,
+      "dueDate": "2026-08-26",
+      "status": "PAID",
+      "sourceText": "계약금 3,000,000원 납부"
+    },
+    {
+      "name": "잔금",
+      "amount": 20000000,
+      "dueDate": "2027-04-30",
+      "status": "UNPAID",
+      "sourceText": "잔금 20,000,000원은 2027년 4월 30일까지"
+    }
+  ],
+  "cancellationTerms": [
+    {
+      "summary": "예식 90일 전까지 계약금 환급",
+      "sourceText": "예식일 90일 전까지 취소 시 계약금 전액 환급"
+    }
+  ],
+  "warnings": []
+}

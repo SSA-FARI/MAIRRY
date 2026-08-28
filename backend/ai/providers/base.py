@@ -3,6 +3,8 @@ from typing import Any, Protocol
 
 
 class AiProvider(Protocol):
+    """AI adapter boundary; implementations should normalize SDK failures."""
+
     async def extract_document(self, file_path: Path) -> dict[str, Any]: ...
 
     async def classify_intent(self, message: str) -> dict[str, Any]: ...
