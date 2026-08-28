@@ -52,6 +52,7 @@ MAIRRY MVP REST API의 동작, 검증, 상태 전이를 정의한다. 기계 판
 | Method | Path | 성공 | 설명 |
 |---|---|---:|---|
 | GET | `/health` | 200 | 상태 확인 |
+| POST | `/v1/auth/demo-login` | 200 | 설정된 단일 Demo User 조회·초기화 |
 | GET | `/wedding-plan` | 200 | 계획 조회 |
 | PUT | `/wedding-plan` | 200 | 계획 생성/수정 |
 | POST | `/documents` | 201 | 문서 업로드 |
@@ -69,6 +70,38 @@ MAIRRY MVP REST API의 동작, 검증, 상태 전이를 정의한다. 기계 판
 ### GET /api/health
 
 응답 200: `{"status": "ok"}`
+
+## Demo Login
+
+### POST /api/v1/auth/demo-login
+
+JWT, Cookie, Session 없이 서버 설정의 단일 `DEMO_USER_ID`만 조회하는 공개 MVP 시연용 API다.
+실제 보안 인증이나 일반 사용자 로그인으로 사용하지 않는다. 요청 본문, Query, Header에서 사용자
+ID나 로그인 정보를 받지 않는다.
+
+Demo User가 없으면 `DEMO_USER_ID`, `DEMO_USER_LOGIN_ID`, `DEMO_USER_DISPLAY_NAME`,
+`DEMO_USER_EMAIL` 설정으로 한 번만 생성한다. `password_hash`에는 요청 시 생성하고 즉시 폐기한 임의
+비밀번호의 bcrypt 해시만 저장한다. 이미 존재하는 사용자의 프로필과 해시는 덮어쓰지 않는다.
+
+요청 본문: 없음.
+
+응답 200:
+
+```json
+{
+  "user": {
+    "id": "00000000-0000-0000-0000-000000000001",
+    "loginId": "demo",
+    "displayName": "Demo User",
+    "email": null
+  },
+  "mode": "DEMO"
+}
+```
+
+응답에는 `passwordHash`, 환경변수 이름·설정 원문, JWT, Refresh Token을 포함하지 않는다.
+Demo 설정이 누락되거나 잘못된 경우 애플리케이션 시작을 거부한다. 설정과 DB UNIQUE 데이터가
+충돌하거나 저장에 실패하면 민감한 설정값을 노출하지 않는 공통 500 오류를 반환한다.
 
 ## Wedding Plan
 
