@@ -76,9 +76,7 @@ def _override_dependencies(engine: Engine, configuration: Settings) -> None:
 def _cleanup(engine: Engine, user_id: uuid.UUID) -> None:
     with Session(engine) as session:
         plan_ids = session.scalars(
-            select(WeddingPlanMember.wedding_plan_id).where(
-                WeddingPlanMember.user_id == user_id
-            )
+            select(WeddingPlanMember.wedding_plan_id).where(WeddingPlanMember.user_id == user_id)
         ).all()
         if plan_ids:
             session.execute(Asset.__table__.delete().where(Asset.wedding_plan_id.in_(plan_ids)))
@@ -263,9 +261,9 @@ def test_concurrent_upserts_create_only_one_current_plan(database_engine: Engine
         assert len({plan_id for _status_code, plan_id in results}) == 1
         with Session(database_engine) as session:
             membership_count = session.scalar(
-                select(func.count()).select_from(WeddingPlanMember).where(
-                    WeddingPlanMember.user_id == user_id
-                )
+                select(func.count())
+                .select_from(WeddingPlanMember)
+                .where(WeddingPlanMember.user_id == user_id)
             )
             assert membership_count == 1
     finally:
