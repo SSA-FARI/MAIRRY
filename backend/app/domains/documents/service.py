@@ -1,16 +1,23 @@
+import logging
+import tempfile
 import uuid
+from pathlib import Path
 
 from fastapi import UploadFile, status
 from sqlalchemy.orm import Session
 
+from ai.common.exceptions import AiError
+from app.application.document_analysis import run_document_analysis
 from app.core.config import settings
-from app.core.enums import DocumentStatus
+from app.core.database import SessionLocal
+from app.core.enums import AnalysisSource, DocumentStatus
 from app.core.error_codes import ErrorCode
 from app.core.errors import AppError
 from app.domains.documents.models import Document
 from app.domains.documents.repository import DocumentRepository
 from app.domains.documents.schemas import DocumentDetailResponse, DocumentExtractionResponse
 from app.domains.documents.storage import DocumentStoragePort
+from app.domains.documents.transitions import ensure_transition_allowed
 from app.domains.documents.validation import (
     ensure_signature_matches,
     read_upload_within_limit,
@@ -18,9 +25,9 @@ from app.domains.documents.validation import (
 )
 from app.integrations.storage.document_storage import MinioDocumentStorage, build_storage_key
 
-_SOURCE_VISIBLE_STATUSES = frozenset(
-    {DocumentStatus.REVIEW_REQUIRED, DocumentStatus.FAILED, DocumentStatus.CONFIRMED}
-)
+logger = logging.getLogger(__name__)
+
+_SOURCE_VISIBLE_STATUSES = frozenset({DocumentStatus.REVIEW_REQUIRED, DocumentStatus.CONFIRMED})
 _EXTRACTION_VISIBLE_STATUSES = frozenset({DocumentStatus.REVIEW_REQUIRED, DocumentStatus.CONFIRMED})
 
 
@@ -77,6 +84,75 @@ class DocumentQueryService:
 
 def get_document_query_service() -> DocumentQueryService:
     return DocumentQueryService(repository=DocumentRepository())
+
+
+class DocumentAnalysisService:
+    """Accepts an analyze request synchronously; runs the AI call in a background task."""
+
+    def __init__(self, repository: DocumentRepository, storage: DocumentStoragePort) -> None:
+        self._repository = repository
+        self._storage = storage
+
+    def start(self, db: Session, document_id: uuid.UUID) -> Document:
+        document = self._repository.get_by_id(db, document_id, settings.demo_wedding_plan_id)
+        if document is None:
+            raise AppError(
+                code=ErrorCode.RESOURCE_NOT_FOUND,
+                message="문서를 찾을 수 없습니다.",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+        ensure_transition_allowed(document.analysis_status, DocumentStatus.PROCESSING)
+        document.analysis_status = DocumentStatus.PROCESSING
+        db.commit()
+        db.refresh(document)
+        return document
+
+    async def process(self, document_id: uuid.UUID) -> None:
+        """Own DB session: runs after the request/response cycle via BackgroundTasks."""
+        db = SessionLocal()
+        try:
+            document = self._repository.get_by_id(db, document_id, settings.demo_wedding_plan_id)
+            if document is None:
+                return
+
+            try:
+                content = self._storage.read(document.file_url)
+            except AppError:
+                logger.warning(
+                    "Document analysis could not read stored file: documentId=%s", document_id
+                )
+                document.analysis_status = DocumentStatus.FAILED
+                db.commit()
+                return
+
+            suffix = Path(document.original_filename).suffix
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temp_file:
+                temp_file.write(content)
+                temp_path = Path(temp_file.name)
+            try:
+                try:
+                    result = await run_document_analysis(temp_path)
+                except AiError:
+                    logger.warning("Document analysis failed: documentId=%s", document_id)
+                    document.analysis_status = DocumentStatus.FAILED
+                    db.commit()
+                    return
+            finally:
+                temp_path.unlink(missing_ok=True)
+
+            document.extraction_raw = result.extraction.model_dump(mode="json")
+            document.analysis_source = AnalysisSource(result.analysis_source)
+            document.analysis_status = DocumentStatus.REVIEW_REQUIRED
+            db.commit()
+        finally:
+            db.close()
+
+
+def get_document_analysis_service() -> DocumentAnalysisService:
+    return DocumentAnalysisService(
+        repository=DocumentRepository(),
+        storage=MinioDocumentStorage(),
+    )
 
 
 def build_document_detail_response(document: Document) -> DocumentDetailResponse:
