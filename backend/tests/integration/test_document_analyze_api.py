@@ -1,6 +1,9 @@
+import tempfile
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
+from pathlib import Path
+from unittest.mock import Mock, patch
 
 import pytest
 from botocore.exceptions import ClientError
@@ -11,6 +14,8 @@ from app.core.config import settings
 from app.core.database import SessionLocal
 from app.core.enums import DocumentStatus
 from app.domains.documents.models import Document
+from app.domains.documents.repository import DocumentRepository
+from app.domains.documents.service import DocumentAnalysisService, get_document_analysis_service
 from app.integrations.storage.document_storage import _build_client
 from app.main import app
 
@@ -123,3 +128,42 @@ def test_analyze_document_returns_404_when_missing() -> None:
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "RESOURCE_NOT_FOUND"
+
+
+def test_process_marks_document_failed_on_unexpected_exception() -> None:
+    """Not just AppError/AiError: any surprise failure must still resolve to FAILED,
+    otherwise the document is stuck in PROCESSING with no allowed transition out."""
+    with _stored_document(_DEMO_FALLBACK_CONTENT) as document_id:
+        service = DocumentAnalysisService(
+            repository=DocumentRepository(),
+            storage=Mock(read=Mock(side_effect=RuntimeError("unexpected failure"))),
+        )
+
+        service.process(document_id)
+
+        response = client.get(f"/api/documents/{document_id}")
+        assert response.json()["status"] == "FAILED"
+
+
+def test_process_cleans_up_temp_file_when_write_fails() -> None:
+    with _stored_document(_DEMO_FALLBACK_CONTENT) as document_id:
+        service = get_document_analysis_service()
+        created_paths: list[Path] = []
+        original_mkstemp = tempfile.mkstemp
+
+        def _tracking_mkstemp(*args: object, **kwargs: object) -> tuple[int, str]:
+            file_descriptor, path_str = original_mkstemp(*args, **kwargs)
+            created_paths.append(Path(path_str))
+            return file_descriptor, path_str
+
+        with (
+            patch("app.domains.documents.service.tempfile.mkstemp", side_effect=_tracking_mkstemp),
+            patch.object(Path, "write_bytes", side_effect=OSError("disk full")),
+        ):
+            service.process(document_id)
+
+        assert created_paths
+        assert not created_paths[0].exists()
+
+        response = client.get(f"/api/documents/{document_id}")
+        assert response.json()["status"] == "FAILED"

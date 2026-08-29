@@ -1,4 +1,6 @@
+import asyncio
 import logging
+import os
 import tempfile
 import uuid
 from pathlib import Path
@@ -6,7 +8,6 @@ from pathlib import Path
 from fastapi import UploadFile, status
 from sqlalchemy.orm import Session
 
-from ai.common.exceptions import AiError
 from app.application.document_analysis import run_document_analysis
 from app.core.config import settings
 from app.core.database import SessionLocal
@@ -87,7 +88,13 @@ def get_document_query_service() -> DocumentQueryService:
 
 
 class DocumentAnalysisService:
-    """Accepts an analyze request synchronously; runs the AI call in a background task."""
+    """Accepts an analyze request synchronously; runs the AI call in a background task.
+
+    process() is intentionally a plain function, not async def: Starlette's BackgroundTasks
+    runs sync callables in a worker thread but awaits async callables directly on the main
+    event loop. Every step here (storage read, disk I/O, db.commit) is blocking, so keeping
+    it sync is what actually moves the work off the event loop.
+    """
 
     def __init__(self, repository: DocumentRepository, storage: DocumentStoragePort) -> None:
         self._repository = repository
@@ -107,7 +114,7 @@ class DocumentAnalysisService:
         db.refresh(document)
         return document
 
-    async def process(self, document_id: uuid.UUID) -> None:
+    def process(self, document_id: uuid.UUID) -> None:
         """Own DB session: runs after the request/response cycle via BackgroundTasks."""
         db = SessionLocal()
         try:
@@ -116,36 +123,35 @@ class DocumentAnalysisService:
                 return
 
             try:
-                content = self._storage.read(document.file_url)
-            except AppError:
-                logger.warning(
-                    "Document analysis could not read stored file: documentId=%s", document_id
+                self._run_analysis(db, document)
+            except Exception:
+                logger.exception(
+                    "Document analysis failed unexpectedly: documentId=%s", document_id
                 )
+                db.rollback()
                 document.analysis_status = DocumentStatus.FAILED
                 db.commit()
-                return
-
-            suffix = Path(document.original_filename).suffix
-            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temp_file:
-                temp_file.write(content)
-                temp_path = Path(temp_file.name)
-            try:
-                try:
-                    result = await run_document_analysis(temp_path)
-                except AiError:
-                    logger.warning("Document analysis failed: documentId=%s", document_id)
-                    document.analysis_status = DocumentStatus.FAILED
-                    db.commit()
-                    return
-            finally:
-                temp_path.unlink(missing_ok=True)
-
-            document.extraction_raw = result.extraction.model_dump(mode="json")
-            document.analysis_source = AnalysisSource(result.analysis_source)
-            document.analysis_status = DocumentStatus.REVIEW_REQUIRED
-            db.commit()
         finally:
             db.close()
+
+    def _run_analysis(self, db: Session, document: Document) -> None:
+        """Any failure here (storage, disk, AI, parsing) is caught by process() as FAILED."""
+        content = self._storage.read(document.file_url)
+
+        suffix = Path(document.original_filename).suffix
+        temp_fd, temp_path_str = tempfile.mkstemp(suffix=suffix)
+        os.close(temp_fd)
+        temp_path = Path(temp_path_str)
+        try:
+            temp_path.write_bytes(content)
+            result = asyncio.run(run_document_analysis(temp_path))
+        finally:
+            temp_path.unlink(missing_ok=True)
+
+        document.extraction_raw = result.extraction.model_dump(mode="json")
+        document.analysis_source = AnalysisSource(result.analysis_source)
+        document.analysis_status = DocumentStatus.REVIEW_REQUIRED
+        db.commit()
 
 
 def get_document_analysis_service() -> DocumentAnalysisService:
