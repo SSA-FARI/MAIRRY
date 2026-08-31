@@ -113,7 +113,13 @@ Demo 설정이 누락되거나 잘못된 경우 애플리케이션 시작을 거
 {"weddingDate": "2027-05-15", "availableAsset": 30000000}
 ```
 
-`weddingDate`는 유효한 날짜, `availableAsset`은 0 이상의 정수다.
+`weddingDate`는 유효한 날짜, `availableAsset`은 0 이상 9,223,372,036,854,775,807 이하의
+원 단위 int64(BIGINT) 정수
+(`0`~`9,223,372,036,854,775,807`)다.
+
+WeddingPlan의 `availableAsset`은 초기 설정에서 입력한 대표 공동 현금 자산 한 건을 의미한다.
+PERSONAL 자산과 별도로 추가한 JOINT 자산은 이 값에 합산하지 않으며 Finance Summary의
+`availableAsset`에서 전체 자산 합계로 제공한다.
 
 응답 200:
 
@@ -331,6 +337,7 @@ amount null 항목은 제외한다.
 ```
 
 - `remainingExpense = SUM(payment.amount)`
+- `availableAsset = SUM(asset.amount)`이며 현재 WeddingPlan의 모든 자산을 포함
 - `expectedBalance = availableAsset - remainingExpense`
 - 대상이 없으면 합계 0, nearestPayment null, timeline 빈 배열
 - WeddingPlan이 없으면 404
