@@ -101,7 +101,12 @@ class DocumentAnalysisService:
         self._storage = storage
 
     def start(self, db: Session, document_id: uuid.UUID) -> Document:
-        document = self._repository.get_by_id(db, document_id, settings.demo_wedding_plan_id)
+        """Locks the row (SELECT ... FOR UPDATE) so a concurrent analyze request on the same
+        document blocks until this transaction commits, instead of both racing past the
+        UPLOADED/FAILED check and starting duplicate AI calls."""
+        document = self._repository.get_by_id(
+            db, document_id, settings.demo_wedding_plan_id, for_update=True
+        )
         if document is None:
             raise AppError(
                 code=ErrorCode.RESOURCE_NOT_FOUND,

@@ -10,9 +10,17 @@ class DocumentRepository:
         db.add(document)
         return document
 
-    def get_by_id(self, db: Session, document_id: UUID, wedding_plan_id: UUID) -> Document | None:
-        return (
-            db.query(Document)
-            .filter(Document.id == document_id, Document.wedding_plan_id == wedding_plan_id)
-            .one_or_none()
+    def get_by_id(
+        self,
+        db: Session,
+        document_id: UUID,
+        wedding_plan_id: UUID,
+        *,
+        for_update: bool = False,
+    ) -> Document | None:
+        query = db.query(Document).filter(
+            Document.id == document_id, Document.wedding_plan_id == wedding_plan_id
         )
+        if for_update:
+            query = query.with_for_update()
+        return query.one_or_none()
