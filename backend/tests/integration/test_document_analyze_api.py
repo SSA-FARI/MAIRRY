@@ -1,0 +1,217 @@
+import asyncio
+import tempfile
+import threading
+import time
+import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
+from pathlib import Path
+from unittest.mock import Mock, patch
+
+import pytest
+from botocore.exceptions import ClientError
+from fastapi.testclient import TestClient
+
+from ai.document_extraction.fallback import DEFAULT_DEMO_DOCUMENT_PATH
+from app.core.config import settings
+from app.core.database import SessionLocal
+from app.core.enums import DocumentStatus
+from app.core.error_codes import ErrorCode
+from app.core.errors import AppError
+from app.domains.documents.models import Document
+from app.domains.documents.repository import DocumentRepository
+from app.domains.documents.service import DocumentAnalysisService, get_document_analysis_service
+from app.integrations.storage.document_storage import _build_client
+from app.main import app
+
+pytestmark = pytest.mark.integration
+
+client = TestClient(app)
+
+_DEMO_FALLBACK_CONTENT = DEFAULT_DEMO_DOCUMENT_PATH.read_bytes()
+_UNKNOWN_CONTENT = b"this content does not match any registered demo fallback"
+
+
+@contextmanager
+def _stored_document(
+    content: bytes, *, status: DocumentStatus = DocumentStatus.UPLOADED
+) -> Iterator[uuid.UUID]:
+    document_id = uuid.uuid4()
+    storage_key = f"{document_id}.pdf"
+    _build_client().put_object(
+        Bucket=settings.object_storage_bucket,
+        Key=storage_key,
+        Body=content,
+        ContentType="application/pdf",
+    )
+    session = SessionLocal()
+    try:
+        session.add(
+            Document(
+                id=document_id,
+                wedding_plan_id=settings.demo_wedding_plan_id,
+                uploaded_by_member_id=settings.demo_member_id,
+                original_filename="contract.pdf",
+                file_url=storage_key,
+                content_type="application/pdf",
+                analysis_status=status,
+            )
+        )
+        session.commit()
+        yield document_id
+    finally:
+        session.query(Document).filter(Document.id == document_id).delete()
+        session.commit()
+        session.close()
+        try:
+            _build_client().delete_object(Bucket=settings.object_storage_bucket, Key=storage_key)
+        except ClientError:
+            pass
+
+
+def test_analyze_document_accepts_and_reports_processing_immediately() -> None:
+    with _stored_document(_DEMO_FALLBACK_CONTENT) as document_id:
+        response = client.post(f"/api/documents/{document_id}/analyze")
+
+        assert response.status_code == 202
+        payload = response.json()
+        assert payload["status"] == "PROCESSING"
+        assert payload["analysisSource"] is None
+        assert payload["extraction"] is None
+        assert payload["error"] is None
+
+
+def test_analyze_document_resolves_to_review_required_via_demo_fallback() -> None:
+    with _stored_document(_DEMO_FALLBACK_CONTENT) as document_id:
+        client.post(f"/api/documents/{document_id}/analyze")
+
+        response = client.get(f"/api/documents/{document_id}")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["status"] == "REVIEW_REQUIRED"
+        assert payload["analysisSource"] == "DEMO_FALLBACK"
+        assert payload["extraction"]["company"] == "A웨딩홀"
+        assert payload["extraction"]["payments"][1]["amount"] == 20000000
+
+
+def test_analyze_document_resolves_to_failed_when_no_fallback_matches() -> None:
+    with _stored_document(_UNKNOWN_CONTENT) as document_id:
+        client.post(f"/api/documents/{document_id}/analyze")
+
+        response = client.get(f"/api/documents/{document_id}")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["status"] == "FAILED"
+        assert payload["analysisSource"] is None
+        assert payload["extraction"] is None
+
+
+def test_analyze_document_allows_retry_from_failed_status() -> None:
+    with _stored_document(_UNKNOWN_CONTENT, status=DocumentStatus.FAILED) as document_id:
+        response = client.post(f"/api/documents/{document_id}/analyze")
+
+        assert response.status_code == 202
+        assert response.json()["status"] == "PROCESSING"
+
+
+@pytest.mark.parametrize(
+    "status",
+    [DocumentStatus.PROCESSING, DocumentStatus.REVIEW_REQUIRED, DocumentStatus.CONFIRMED],
+)
+def test_analyze_document_returns_409_for_disallowed_current_status(status: DocumentStatus) -> None:
+    with _stored_document(_DEMO_FALLBACK_CONTENT, status=status) as document_id:
+        response = client.post(f"/api/documents/{document_id}/analyze")
+
+        assert response.status_code == 409
+        assert response.json()["error"]["code"] == "INVALID_STATE"
+
+
+def test_analyze_document_returns_404_when_missing() -> None:
+    response = client.post(f"/api/documents/{uuid.uuid4()}/analyze")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "RESOURCE_NOT_FOUND"
+
+
+def test_start_serializes_concurrent_analyze_requests_via_row_lock() -> None:
+    """A second start() on the same document must block on the FOR UPDATE lock until the
+    first transaction commits, then see PROCESSING and reject with 409 instead of racing
+    the first request into starting a duplicate AI call."""
+    with _stored_document(_DEMO_FALLBACK_CONTENT) as document_id:
+        repository = DocumentRepository()
+        service = DocumentAnalysisService(repository=repository, storage=Mock())
+        locked = threading.Event()
+        second_outcome: dict[str, object] = {}
+
+        def _run_second_start() -> None:
+            locked.wait(timeout=5)
+            second_session = SessionLocal()
+            try:
+                service.start(second_session, document_id)
+                second_outcome["result"] = "succeeded"
+            except AppError as exc:
+                second_outcome["result"] = "rejected"
+                second_outcome["code"] = exc.code
+            finally:
+                second_session.close()
+
+        second_thread = threading.Thread(target=_run_second_start)
+        second_thread.start()
+
+        first_session = SessionLocal()
+        try:
+            document = repository.get_by_id(
+                first_session, document_id, settings.demo_wedding_plan_id, for_update=True
+            )
+            assert document is not None
+            locked.set()
+            time.sleep(0.2)  # let the second thread reach the row lock before we commit
+            document.analysis_status = DocumentStatus.PROCESSING
+            first_session.commit()
+        finally:
+            first_session.close()
+
+        second_thread.join(timeout=5)
+        assert second_outcome.get("result") == "rejected"
+        assert second_outcome.get("code") == ErrorCode.INVALID_STATE
+
+
+def test_process_marks_document_failed_on_unexpected_exception() -> None:
+    """Not just AppError/AiError: any surprise failure must still resolve to FAILED,
+    otherwise the document is stuck in PROCESSING with no allowed transition out."""
+    with _stored_document(_DEMO_FALLBACK_CONTENT) as document_id:
+        service = DocumentAnalysisService(
+            repository=DocumentRepository(),
+            storage=Mock(read=Mock(side_effect=RuntimeError("unexpected failure"))),
+        )
+
+        asyncio.run(service.process(document_id))
+
+        response = client.get(f"/api/documents/{document_id}")
+        assert response.json()["status"] == "FAILED"
+
+
+def test_process_cleans_up_temp_file_when_write_fails() -> None:
+    with _stored_document(_DEMO_FALLBACK_CONTENT) as document_id:
+        service = get_document_analysis_service()
+        created_paths: list[Path] = []
+        original_mkstemp = tempfile.mkstemp
+
+        def _tracking_mkstemp(*args: object, **kwargs: object) -> tuple[int, str]:
+            file_descriptor, path_str = original_mkstemp(*args, **kwargs)
+            created_paths.append(Path(path_str))
+            return file_descriptor, path_str
+
+        with (
+            patch("app.domains.documents.service.tempfile.mkstemp", side_effect=_tracking_mkstemp),
+            patch.object(Path, "write_bytes", side_effect=OSError("disk full")),
+        ):
+            asyncio.run(service.process(document_id))
+
+        assert created_paths
+        assert not created_paths[0].exists()
+
+        response = client.get(f"/api/documents/{document_id}")
+        assert response.json()["status"] == "FAILED"

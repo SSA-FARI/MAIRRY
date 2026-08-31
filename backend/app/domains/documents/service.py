@@ -1,16 +1,25 @@
+import logging
+import os
+import tempfile
 import uuid
+from pathlib import Path
 
+import anyio.to_thread
 from fastapi import UploadFile, status
 from sqlalchemy.orm import Session
 
+from ai.document_extraction.schemas import DocumentAnalysisResult
+from app.application.document_analysis import run_document_analysis
 from app.core.config import settings
-from app.core.enums import DocumentStatus
+from app.core.database import SessionLocal
+from app.core.enums import AnalysisSource, DocumentStatus
 from app.core.error_codes import ErrorCode
 from app.core.errors import AppError
 from app.domains.documents.models import Document
 from app.domains.documents.repository import DocumentRepository
 from app.domains.documents.schemas import DocumentDetailResponse, DocumentExtractionResponse
 from app.domains.documents.storage import DocumentStoragePort
+from app.domains.documents.transitions import ensure_transition_allowed
 from app.domains.documents.validation import (
     ensure_signature_matches,
     read_upload_within_limit,
@@ -18,9 +27,9 @@ from app.domains.documents.validation import (
 )
 from app.integrations.storage.document_storage import MinioDocumentStorage, build_storage_key
 
-_SOURCE_VISIBLE_STATUSES = frozenset(
-    {DocumentStatus.REVIEW_REQUIRED, DocumentStatus.FAILED, DocumentStatus.CONFIRMED}
-)
+logger = logging.getLogger(__name__)
+
+_SOURCE_VISIBLE_STATUSES = frozenset({DocumentStatus.REVIEW_REQUIRED, DocumentStatus.CONFIRMED})
 _EXTRACTION_VISIBLE_STATUSES = frozenset({DocumentStatus.REVIEW_REQUIRED, DocumentStatus.CONFIRMED})
 
 
@@ -77,6 +86,105 @@ class DocumentQueryService:
 
 def get_document_query_service() -> DocumentQueryService:
     return DocumentQueryService(repository=DocumentRepository())
+
+
+class DocumentAnalysisService:
+    """Accepts an analyze request synchronously; runs the AI call in a background task.
+
+    process() is async def so BackgroundTasks awaits it directly on the event loop instead of
+    running it in a worker thread. run_document_analysis (an async AI call) is awaited in
+    place, with no asyncio.run() spinning up a throwaway loop per call. Every blocking step
+    (storage read, disk write, db round-trips) is pushed onto a worker thread via
+    anyio.to_thread.run_sync instead, so the event loop is never blocked by them.
+    """
+
+    def __init__(self, repository: DocumentRepository, storage: DocumentStoragePort) -> None:
+        self._repository = repository
+        self._storage = storage
+
+    def start(self, db: Session, document_id: uuid.UUID) -> Document:
+        """Locks the row (SELECT ... FOR UPDATE) so a concurrent analyze request on the same
+        document blocks until this transaction commits, instead of both racing past the
+        UPLOADED/FAILED check and starting duplicate AI calls."""
+        document = self._repository.get_by_id(
+            db, document_id, settings.demo_wedding_plan_id, for_update=True
+        )
+        if document is None:
+            raise AppError(
+                code=ErrorCode.RESOURCE_NOT_FOUND,
+                message="문서를 찾을 수 없습니다.",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+        ensure_transition_allowed(document.analysis_status, DocumentStatus.PROCESSING)
+        document.analysis_status = DocumentStatus.PROCESSING
+        db.commit()
+        db.refresh(document)
+        return document
+
+    async def process(self, document_id: uuid.UUID) -> None:
+        """Own DB session: runs after the request/response cycle via BackgroundTasks."""
+        db = SessionLocal()
+        try:
+            document = await anyio.to_thread.run_sync(
+                self._repository.get_by_id, db, document_id, settings.demo_wedding_plan_id
+            )
+            if document is None:
+                return
+
+            try:
+                await self._run_analysis(db, document)
+            except Exception:
+                logger.exception(
+                    "Document analysis failed unexpectedly: documentId=%s", document_id
+                )
+                await anyio.to_thread.run_sync(db.rollback)
+                await anyio.to_thread.run_sync(self._mark_failed, db, document_id)
+        finally:
+            await anyio.to_thread.run_sync(db.close)
+
+    async def _run_analysis(self, db: Session, document: Document) -> None:
+        """Any failure here (storage, disk, AI, parsing) is caught by process() as FAILED."""
+        content = await anyio.to_thread.run_sync(self._storage.read, document.file_url)
+
+        suffix = Path(document.original_filename).suffix
+        temp_fd, temp_path_str = tempfile.mkstemp(suffix=suffix)
+        os.close(temp_fd)
+        temp_path = Path(temp_path_str)
+        try:
+            await anyio.to_thread.run_sync(temp_path.write_bytes, content)
+            result = await run_document_analysis(temp_path)
+        finally:
+            temp_path.unlink(missing_ok=True)
+
+        await anyio.to_thread.run_sync(self._store_result, db, document.id, result)
+
+    @staticmethod
+    def _store_result(db: Session, document_id: uuid.UUID, result: DocumentAnalysisResult) -> None:
+        db.query(Document).filter(Document.id == document_id).update(
+            {
+                "extraction_raw": result.extraction.model_dump(mode="json"),
+                "analysis_source": AnalysisSource(result.analysis_source),
+                "analysis_status": DocumentStatus.REVIEW_REQUIRED,
+            }
+        )
+        db.commit()
+
+    @staticmethod
+    def _mark_failed(db: Session, document_id: uuid.UUID) -> None:
+        """Updates by id instead of mutating the loaded ORM instance: this runs right after
+        db.rollback(), which expires every object still attached to the session, so writing
+        through a fresh identity-based query avoids relying on that stale attribute state."""
+        db.query(Document).filter(Document.id == document_id).update(
+            {"analysis_status": DocumentStatus.FAILED}
+        )
+        db.commit()
+
+
+def get_document_analysis_service() -> DocumentAnalysisService:
+    return DocumentAnalysisService(
+        repository=DocumentRepository(),
+        storage=MinioDocumentStorage(),
+    )
 
 
 def build_document_detail_response(document: Document) -> DocumentDetailResponse:

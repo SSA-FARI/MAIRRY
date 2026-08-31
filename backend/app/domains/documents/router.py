@@ -1,14 +1,16 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.domains.documents.schemas import DocumentDetailResponse, DocumentUploadResponse
 from app.domains.documents.service import (
+    DocumentAnalysisService,
     DocumentQueryService,
     DocumentUploadService,
     build_document_detail_response,
+    get_document_analysis_service,
     get_document_query_service,
     get_document_upload_service,
 )
@@ -40,9 +42,20 @@ def get_document(
     return build_document_detail_response(document)
 
 
-@router.post("/{document_id}/analyze", status_code=status.HTTP_202_ACCEPTED)
-def analyze_document(document_id: UUID) -> dict[str, str]:
-    return {"documentId": str(document_id), "status": "PROCESSING"}
+@router.post(
+    "/{document_id}/analyze",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=DocumentDetailResponse,
+)
+def analyze_document(
+    document_id: UUID,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    service: DocumentAnalysisService = Depends(get_document_analysis_service),
+) -> DocumentDetailResponse:
+    document = service.start(db, document_id)
+    background_tasks.add_task(service.process, document_id)
+    return build_document_detail_response(document)
 
 
 @router.put("/{document_id}/confirm")
