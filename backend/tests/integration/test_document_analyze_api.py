@@ -1,3 +1,4 @@
+import asyncio
 import tempfile
 import threading
 import time
@@ -186,7 +187,7 @@ def test_process_marks_document_failed_on_unexpected_exception() -> None:
             storage=Mock(read=Mock(side_effect=RuntimeError("unexpected failure"))),
         )
 
-        service.process(document_id)
+        asyncio.run(service.process(document_id))
 
         response = client.get(f"/api/documents/{document_id}")
         assert response.json()["status"] == "FAILED"
@@ -207,7 +208,7 @@ def test_process_cleans_up_temp_file_when_write_fails() -> None:
             patch("app.domains.documents.service.tempfile.mkstemp", side_effect=_tracking_mkstemp),
             patch.object(Path, "write_bytes", side_effect=OSError("disk full")),
         ):
-            service.process(document_id)
+            asyncio.run(service.process(document_id))
 
         assert created_paths
         assert not created_paths[0].exists()

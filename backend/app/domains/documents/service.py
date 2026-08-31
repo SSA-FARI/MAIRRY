@@ -1,13 +1,14 @@
-import asyncio
 import logging
 import os
 import tempfile
 import uuid
 from pathlib import Path
 
+import anyio.to_thread
 from fastapi import UploadFile, status
 from sqlalchemy.orm import Session
 
+from ai.document_extraction.schemas import DocumentAnalysisResult
 from app.application.document_analysis import run_document_analysis
 from app.core.config import settings
 from app.core.database import SessionLocal
@@ -90,10 +91,11 @@ def get_document_query_service() -> DocumentQueryService:
 class DocumentAnalysisService:
     """Accepts an analyze request synchronously; runs the AI call in a background task.
 
-    process() is intentionally a plain function, not async def: Starlette's BackgroundTasks
-    runs sync callables in a worker thread but awaits async callables directly on the main
-    event loop. Every step here (storage read, disk I/O, db.commit) is blocking, so keeping
-    it sync is what actually moves the work off the event loop.
+    process() is async def so BackgroundTasks awaits it directly on the event loop instead of
+    running it in a worker thread. run_document_analysis (an async AI call) is awaited in
+    place, with no asyncio.run() spinning up a throwaway loop per call. Every blocking step
+    (storage read, disk write, db round-trips) is pushed onto a worker thread via
+    anyio.to_thread.run_sync instead, so the event loop is never blocked by them.
     """
 
     def __init__(self, repository: DocumentRepository, storage: DocumentStoragePort) -> None:
@@ -119,43 +121,62 @@ class DocumentAnalysisService:
         db.refresh(document)
         return document
 
-    def process(self, document_id: uuid.UUID) -> None:
+    async def process(self, document_id: uuid.UUID) -> None:
         """Own DB session: runs after the request/response cycle via BackgroundTasks."""
         db = SessionLocal()
         try:
-            document = self._repository.get_by_id(db, document_id, settings.demo_wedding_plan_id)
+            document = await anyio.to_thread.run_sync(
+                self._repository.get_by_id, db, document_id, settings.demo_wedding_plan_id
+            )
             if document is None:
                 return
 
             try:
-                self._run_analysis(db, document)
+                await self._run_analysis(db, document)
             except Exception:
                 logger.exception(
                     "Document analysis failed unexpectedly: documentId=%s", document_id
                 )
-                db.rollback()
-                document.analysis_status = DocumentStatus.FAILED
-                db.commit()
+                await anyio.to_thread.run_sync(db.rollback)
+                await anyio.to_thread.run_sync(self._mark_failed, db, document_id)
         finally:
-            db.close()
+            await anyio.to_thread.run_sync(db.close)
 
-    def _run_analysis(self, db: Session, document: Document) -> None:
+    async def _run_analysis(self, db: Session, document: Document) -> None:
         """Any failure here (storage, disk, AI, parsing) is caught by process() as FAILED."""
-        content = self._storage.read(document.file_url)
+        content = await anyio.to_thread.run_sync(self._storage.read, document.file_url)
 
         suffix = Path(document.original_filename).suffix
         temp_fd, temp_path_str = tempfile.mkstemp(suffix=suffix)
         os.close(temp_fd)
         temp_path = Path(temp_path_str)
         try:
-            temp_path.write_bytes(content)
-            result = asyncio.run(run_document_analysis(temp_path))
+            await anyio.to_thread.run_sync(temp_path.write_bytes, content)
+            result = await run_document_analysis(temp_path)
         finally:
             temp_path.unlink(missing_ok=True)
 
-        document.extraction_raw = result.extraction.model_dump(mode="json")
-        document.analysis_source = AnalysisSource(result.analysis_source)
-        document.analysis_status = DocumentStatus.REVIEW_REQUIRED
+        await anyio.to_thread.run_sync(self._store_result, db, document.id, result)
+
+    @staticmethod
+    def _store_result(db: Session, document_id: uuid.UUID, result: DocumentAnalysisResult) -> None:
+        db.query(Document).filter(Document.id == document_id).update(
+            {
+                "extraction_raw": result.extraction.model_dump(mode="json"),
+                "analysis_source": AnalysisSource(result.analysis_source),
+                "analysis_status": DocumentStatus.REVIEW_REQUIRED,
+            }
+        )
+        db.commit()
+
+    @staticmethod
+    def _mark_failed(db: Session, document_id: uuid.UUID) -> None:
+        """Updates by id instead of mutating the loaded ORM instance: this runs right after
+        db.rollback(), which expires every object still attached to the session, so writing
+        through a fresh identity-based query avoids relying on that stale attribute state."""
+        db.query(Document).filter(Document.id == document_id).update(
+            {"analysis_status": DocumentStatus.FAILED}
+        )
         db.commit()
 
 
