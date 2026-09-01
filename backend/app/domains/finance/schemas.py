@@ -1,4 +1,5 @@
-from datetime import date
+from datetime import date, datetime
+from uuid import UUID
 
 from pydantic import Field
 
@@ -12,10 +13,30 @@ class PaymentInput(ApiModel):
     status: PaymentStatus
 
 
+class FinancePayment(ApiModel):
+    contract_id: UUID
+    company: str
+    name: str
+    amount: int = Field(ge=0)
+    due_date: date
+
+
+class FinancePaymentRecord(ApiModel):
+    payment_id: UUID
+    contract_id: UUID
+    company: str
+    name: str
+    amount: int = Field(ge=0)
+    due_date: date | None
+    created_at: datetime
+
+
 class FinanceSummary(ApiModel):
-    available_asset: int
-    remaining_expense: int
+    available_asset: int = Field(ge=0)
+    remaining_expense: int = Field(ge=0)
     expected_balance: int
+    nearest_payment: FinancePayment | None
+    timeline: list[FinancePayment]
 
 
 class SimulationRequest(ApiModel):
