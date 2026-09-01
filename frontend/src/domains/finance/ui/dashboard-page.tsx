@@ -543,7 +543,7 @@ function Progress({
   muted?: boolean;
 }) {
   return (
-    <div className={muted ? "progress muted" : "progress"}>
+    <div className={`${muted ? "progress muted" : "progress"}${value < 0 ? " negative" : ""}`}>
       <div>
         <span>{label}</span>
         <span>{formatWon(value)}</span>
