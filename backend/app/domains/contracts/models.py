@@ -35,8 +35,11 @@ class Contract(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    # TODO: wedding_plans / wedding_plan_members 모델이 main에 병합되면 FK를 추가한다.
-    wedding_plan_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    wedding_plan_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("wedding_plans.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
     document_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("documents.id", ondelete="RESTRICT"),
@@ -64,7 +67,9 @@ class Contract(Base):
         server_default=ContractStatus.CONFIRMED.value,
     )
     confirmed_by_member_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True
+        UUID(as_uuid=True),
+        ForeignKey("wedding_plan_members.id", ondelete="RESTRICT"),
+        nullable=True,
     )
     confirmed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

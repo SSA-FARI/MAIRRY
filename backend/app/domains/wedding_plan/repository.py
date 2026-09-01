@@ -28,6 +28,17 @@ class WeddingPlanRepository:
         )
         return self._session.scalar(statement)
 
+    def get_member_for_user(
+        self,
+        wedding_plan_id: UUID,
+        user_id: UUID,
+    ) -> WeddingPlanMember | None:
+        statement = select(WeddingPlanMember).where(
+            WeddingPlanMember.wedding_plan_id == wedding_plan_id,
+            WeddingPlanMember.user_id == user_id,
+        )
+        return self._session.scalar(statement)
+
     def add_plan(self, plan: WeddingPlan) -> None:
         self._session.add(plan)
 

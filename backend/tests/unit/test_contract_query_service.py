@@ -7,10 +7,11 @@ import pytest
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import Settings
-from app.core.enums import ContractStatus, DocumentType, PaymentStatus
+from app.core.enums import ContractStatus, DocumentStatus, DocumentType, PaymentStatus
 from app.core.errors import AppError
 from app.domains.contracts.models import CancellationTerm, Contract, Payment
-from app.domains.contracts.service import ContractQueryService
+from app.domains.contracts.schemas import ContractConfirm
+from app.domains.contracts.service import ContractConfirmationService, ContractQueryService
 
 
 def _settings() -> Settings:
@@ -159,4 +160,47 @@ def test_repository_failure_rolls_back_and_returns_sanitized_error() -> None:
     assert raised.value.status_code == 500
     assert "sensitive" not in raised.value.message
     assert raised.value.details == {}
+    session.rollback.assert_called_once_with()
+
+
+def test_confirmation_persistence_failure_rolls_back() -> None:
+    session = MagicMock()
+    service = ContractConfirmationService(session, _settings())
+    plan = SimpleNamespace(id=uuid4())
+    member = SimpleNamespace(id=uuid4())
+    document = SimpleNamespace(
+        id=uuid4(),
+        document_type=None,
+        analysis_status=DocumentStatus.REVIEW_REQUIRED,
+    )
+    service._plans = MagicMock()
+    service._plans.get_current_for_user.return_value = plan
+    service._plans.get_member_for_user.return_value = member
+    service._documents = MagicMock()
+    service._documents.get_by_id.return_value = document
+    service._contracts = MagicMock()
+    service._contracts.add.side_effect = SQLAlchemyError("sensitive db detail")
+    payload = ContractConfirm.model_validate(
+        {
+            "documentType": "WEDDING_HALL",
+            "company": "A웨딩홀",
+            "totalPrice": 23_000_000,
+            "payments": [
+                {
+                    "name": "잔금",
+                    "amount": 20_000_000,
+                    "dueDate": None,
+                    "status": "UNPAID",
+                    "sourceText": None,
+                }
+            ],
+            "cancellationTerms": [],
+        }
+    )
+
+    with pytest.raises(AppError) as raised:
+        service.confirm(document.id, payload)
+
+    assert raised.value.status_code == 500
+    assert "sensitive" not in raised.value.message
     session.rollback.assert_called_once_with()

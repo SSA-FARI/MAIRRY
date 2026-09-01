@@ -55,7 +55,7 @@ async def app_error_handler(_request: Request, exc: AppError) -> JSONResponse:
 
 
 async def validation_error_handler(
-    _request: Request,
+    request: Request,
     exc: RequestValidationError,
 ) -> JSONResponse:
     field_errors = [
@@ -66,10 +66,26 @@ async def validation_error_handler(
         }
         for error in exc.errors()
     ]
+    is_contract_confirmation = (
+        request.method == "PUT"
+        and request.url.path.startswith("/api/documents/")
+        and request.url.path.endswith("/confirm")
+        and all(error["loc"] and error["loc"][0] == "body" for error in exc.errors())
+    )
+    response_status = (
+        status.HTTP_422_UNPROCESSABLE_CONTENT
+        if is_contract_confirmation
+        else status.HTTP_400_BAD_REQUEST
+    )
+    error_code = (
+        ErrorCode.EXTRACTION_VALIDATION_ERROR
+        if is_contract_confirmation
+        else ErrorCode.VALIDATION_ERROR
+    )
     return _response(
-        status.HTTP_400_BAD_REQUEST,
+        response_status,
         ErrorBody(
-            code=ErrorCode.VALIDATION_ERROR,
+            code=error_code,
             message="요청 값을 확인해 주세요.",
             details={"fields": field_errors},
         ),
