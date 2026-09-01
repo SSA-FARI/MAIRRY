@@ -1,9 +1,14 @@
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, UploadFile, status
 from sqlalchemy.orm import Session
 
+from app.core.config import Settings, get_settings
 from app.core.database import get_db
+from app.core.errors import ErrorResponse
+from app.domains.contracts.schemas import ContractConfirm, ContractDetailRead
+from app.domains.contracts.service import ContractConfirmationService
 from app.domains.documents.schemas import DocumentDetailResponse, DocumentUploadResponse
 from app.domains.documents.service import (
     DocumentAnalysisService,
@@ -58,6 +63,19 @@ def analyze_document(
     return build_document_detail_response(document)
 
 
-@router.put("/{document_id}/confirm")
-def confirm_document(document_id: UUID) -> dict[str, str]:
-    return {"documentId": str(document_id), "status": "CONFIRMED"}
+@router.put(
+    "/{document_id}/confirm",
+    response_model=ContractDetailRead,
+    responses={
+        404: {"model": ErrorResponse, "description": "Document or wedding plan not found"},
+        409: {"model": ErrorResponse, "description": "Invalid document state"},
+        422: {"model": ErrorResponse, "description": "Invalid confirmation data"},
+    },
+)
+def confirm_document(
+    document_id: UUID,
+    payload: ContractConfirm,
+    db: Annotated[Session, Depends(get_db)],
+    configuration: Annotated[Settings, Depends(get_settings)],
+) -> ContractDetailRead:
+    return ContractConfirmationService(db, configuration).confirm(document_id, payload)

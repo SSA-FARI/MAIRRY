@@ -37,3 +37,6 @@ class ContractRepository:
             )
         )
         return self._session.scalar(statement)
+
+    def add(self, contract: Contract) -> None:
+        self._session.add(contract)

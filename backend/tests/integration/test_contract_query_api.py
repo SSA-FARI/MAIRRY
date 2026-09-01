@@ -156,6 +156,49 @@ def _create_contract(
     return contract
 
 
+def _create_review_document(
+    session: Session,
+    *,
+    plan_id: uuid.UUID,
+    member_id: uuid.UUID,
+    analysis_status: DocumentStatus,
+) -> Document:
+    document = Document(
+        id=uuid.uuid4(),
+        wedding_plan_id=plan_id,
+        uploaded_by_member_id=member_id,
+        original_filename="review.pdf",
+        file_url=f"documents/{uuid.uuid4()}.pdf",
+        content_type="application/pdf",
+        analysis_status=analysis_status,
+    )
+    session.add(document)
+    return document
+
+
+def _confirmation_payload() -> dict[str, object]:
+    return {
+        "documentType": "WEDDING_HALL",
+        "company": "수정한 웨딩홀",
+        "totalPrice": 23_000_000,
+        "payments": [
+            {
+                "name": "잔금",
+                "amount": 20_000_000,
+                "dueDate": "2099-04-30",
+                "status": "UNPAID",
+                "sourceText": "잔금 20,000,000원",
+            }
+        ],
+        "cancellationTerms": [
+            {
+                "summary": "예식 90일 전까지 계약금 환급",
+                "sourceText": "90일 전까지 전액 환급",
+            }
+        ],
+    }
+
+
 def _cleanup(engine: Engine, user_ids: list[uuid.UUID]) -> None:
     with Session(engine) as session:
         plan_ids = [
@@ -371,3 +414,200 @@ def test_contract_responses_match_generated_and_committed_openapi(
     finally:
         app.dependency_overrides.clear()
         _cleanup(database_engine, [user_id])
+
+
+def test_review_01_confirm_persists_reviewed_values_in_one_contract(
+    database_engine: Engine,
+) -> None:
+    user_id = uuid.uuid4()
+    _cleanup(database_engine, [user_id])
+    with Session(database_engine) as session:
+        plan_id, member_id = _create_user_plan(session, user_id)
+        document = _create_review_document(
+            session,
+            plan_id=plan_id,
+            member_id=member_id,
+            analysis_status=DocumentStatus.REVIEW_REQUIRED,
+        )
+        document_id = document.id
+        session.commit()
+
+    _override_dependencies(database_engine, _configuration(str(database_engine.url), user_id))
+    try:
+        client = TestClient(app)
+        response = client.put(
+            f"/api/documents/{document_id}/confirm",
+            json=_confirmation_payload(),
+        )
+
+        assert response.status_code == 200
+        assert response.json()["company"] == "수정한 웨딩홀"
+        assert response.json()["payments"][0]["sourceText"] == "잔금 20,000,000원"
+        with Session(database_engine) as session:
+            contract = session.scalar(select(Contract).where(Contract.document_id == document_id))
+            confirmed_document = session.get(Document, document_id)
+            assert contract is not None
+            assert contract.wedding_plan_id == plan_id
+            assert contract.confirmed_by_member_id == member_id
+            assert confirmed_document is not None
+            assert confirmed_document.analysis_status == DocumentStatus.CONFIRMED
+
+        duplicate = client.put(
+            f"/api/documents/{document_id}/confirm",
+            json=_confirmation_payload(),
+        )
+        assert duplicate.status_code == 409
+    finally:
+        app.dependency_overrides.clear()
+        _cleanup(database_engine, [user_id])
+
+
+@pytest.mark.parametrize(
+    ("mutate_payload", "expected_field"),
+    [
+        (lambda payload: payload.pop("company"), "company"),
+        (lambda payload: payload["payments"][0].update({"amount": None}), "payments.0.amount"),
+        (lambda payload: payload.update({"payments": []}), "payments"),
+    ],
+)
+def test_review_02_04_05_invalid_confirmation_returns_422_without_writes(
+    database_engine: Engine,
+    mutate_payload: object,
+    expected_field: str,
+) -> None:
+    user_id = uuid.uuid4()
+    _cleanup(database_engine, [user_id])
+    with Session(database_engine) as session:
+        plan_id, member_id = _create_user_plan(session, user_id)
+        document = _create_review_document(
+            session,
+            plan_id=plan_id,
+            member_id=member_id,
+            analysis_status=DocumentStatus.REVIEW_REQUIRED,
+        )
+        document_id = document.id
+        session.commit()
+
+    payload = _confirmation_payload()
+    mutate_payload(payload)  # type: ignore[operator]
+    _override_dependencies(database_engine, _configuration(str(database_engine.url), user_id))
+    try:
+        response = TestClient(app).put(
+            f"/api/documents/{document_id}/confirm",
+            json=payload,
+        )
+
+        assert response.status_code == 422
+        assert response.json()["error"]["code"] == "EXTRACTION_VALIDATION_ERROR"
+        fields = {item["field"] for item in response.json()["error"]["details"]["fields"]}
+        assert expected_field in fields
+        with Session(database_engine) as session:
+            assert (
+                session.scalar(select(Contract).where(Contract.document_id == document_id)) is None
+            )
+            unchanged = session.get(Document, document_id)
+            assert unchanged is not None
+            assert unchanged.analysis_status == DocumentStatus.REVIEW_REQUIRED
+    finally:
+        app.dependency_overrides.clear()
+        _cleanup(database_engine, [user_id])
+
+
+def test_review_03_unconfirmed_document_is_excluded_until_confirmation(
+    database_engine: Engine,
+) -> None:
+    user_id = uuid.uuid4()
+    _cleanup(database_engine, [user_id])
+    with Session(database_engine) as session:
+        plan_id, member_id = _create_user_plan(session, user_id)
+        document = _create_review_document(
+            session,
+            plan_id=plan_id,
+            member_id=member_id,
+            analysis_status=DocumentStatus.REVIEW_REQUIRED,
+        )
+        document_id = document.id
+        session.commit()
+
+    _override_dependencies(database_engine, _configuration(str(database_engine.url), user_id))
+    try:
+        client = TestClient(app)
+        before = client.get("/api/finance/summary")
+        confirmed = client.put(
+            f"/api/documents/{document_id}/confirm",
+            json=_confirmation_payload(),
+        )
+        after = client.get("/api/finance/summary")
+
+        assert before.status_code == 200
+        assert before.json()["remainingExpense"] == 0
+        assert confirmed.status_code == 200
+        assert after.status_code == 200
+        assert after.json()["remainingExpense"] == 20_000_000
+    finally:
+        app.dependency_overrides.clear()
+        _cleanup(database_engine, [user_id])
+
+
+def test_review_06_failed_manual_confirmation_discards_unverified_evidence(
+    database_engine: Engine,
+) -> None:
+    user_id = uuid.uuid4()
+    _cleanup(database_engine, [user_id])
+    with Session(database_engine) as session:
+        plan_id, member_id = _create_user_plan(session, user_id)
+        document = _create_review_document(
+            session,
+            plan_id=plan_id,
+            member_id=member_id,
+            analysis_status=DocumentStatus.FAILED,
+        )
+        document_id = document.id
+        session.commit()
+
+    _override_dependencies(database_engine, _configuration(str(database_engine.url), user_id))
+    try:
+        response = TestClient(app).put(
+            f"/api/documents/{document_id}/confirm",
+            json=_confirmation_payload(),
+        )
+
+        assert response.status_code == 200
+        assert response.json()["payments"][0]["sourceText"] is None
+        assert response.json()["cancellationTerms"][0]["sourceText"] is None
+    finally:
+        app.dependency_overrides.clear()
+        _cleanup(database_engine, [user_id])
+
+
+def test_confirmation_hides_document_owned_by_another_plan(database_engine: Engine) -> None:
+    user_id = uuid.uuid4()
+    other_user_id = uuid.uuid4()
+    _cleanup(database_engine, [user_id, other_user_id])
+    with Session(database_engine) as session:
+        _create_user_plan(session, user_id)
+        other_plan_id, other_member_id = _create_user_plan(session, other_user_id)
+        document = _create_review_document(
+            session,
+            plan_id=other_plan_id,
+            member_id=other_member_id,
+            analysis_status=DocumentStatus.REVIEW_REQUIRED,
+        )
+        document_id = document.id
+        session.commit()
+
+    _override_dependencies(database_engine, _configuration(str(database_engine.url), user_id))
+    try:
+        response = TestClient(app).put(
+            f"/api/documents/{document_id}/confirm",
+            json=_confirmation_payload(),
+        )
+
+        assert response.status_code == 404
+        with Session(database_engine) as session:
+            assert (
+                session.scalar(select(Contract).where(Contract.document_id == document_id)) is None
+            )
+    finally:
+        app.dependency_overrides.clear()
+        _cleanup(database_engine, [user_id, other_user_id])
