@@ -50,7 +50,8 @@ describe("DashboardPage", () => {
     expect(screen.getByText("35,000,000원")).toBeInTheDocument();
     expect(screen.getAllByText("20,000,000원").length).toBeGreaterThan(0);
     expect(screen.getAllByText("15,000,000원").length).toBeGreaterThan(0);
-    expect(screen.getByRole("heading", { name: /A웨딩홀 · 잔금/ })).toBeInTheDocument();
+    expect(screen.getByText("A웨딩홀 · 잔금")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "지급 일정 캘린더" })).toBeInTheDocument();
   });
 
   it("shows setup on plan 404 and sends only the contract fields", async () => {
@@ -101,15 +102,63 @@ describe("DashboardPage", () => {
     );
     const user = userEvent.setup();
     render(<DashboardPage />);
-    await screen.findByText("추가 지출 시뮬레이션");
+    await screen.findByRole("heading", { name: "지급 일정 캘린더" });
+    await user.click(screen.getByRole("button", { name: "추가 지출 계산" }));
+    expect(screen.getByRole("dialog", { name: "추가 지출 시뮬레이션" })).toBeInTheDocument();
     await user.type(screen.getByLabelText("추가 지출 항목"), "가전 비용");
     await user.type(screen.getByLabelText("추가로 예상되는 지출"), "17000000");
     await user.click(screen.getByRole("button", { name: /계산하기/ }));
     expect((await screen.findAllByText("-2,000,000원")).length).toBeGreaterThan(0);
-    expect(
-      screen.getByText("2,000,000원이 부족해질 수 있어요.", { exact: false }),
-    ).toBeInTheDocument();
+    expect(screen.getByText("⚠ 부족 2,000,000원")).toBeInTheDocument();
     expect(calls).toBe(1);
     expect(body).toEqual({ name: "가전 비용", amount: 17_000_000 });
+  });
+
+  it("selects a real payment date in the calendar and exposes its detail", async () => {
+    server.use(
+      http.get(`${baseUrl}/wedding-plan`, () => HttpResponse.json(plan)),
+      http.get(`${baseUrl}/finance/summary`, () => HttpResponse.json(summary)),
+    );
+    const user = userEvent.setup();
+    render(<DashboardPage />);
+    const paymentDate = await screen.findByRole("gridcell", {
+      name: /2027-04-30, 지급 예정 1건/,
+    });
+    await user.click(paymentDate);
+    expect(paymentDate).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("2027.04.30")).toBeInTheDocument();
+    expect(screen.getAllByText("잔금 · 20,000,000원").length).toBeGreaterThan(0);
+  });
+
+  it("initially selects the oldest overdue payment before the nearest future payment", async () => {
+    const overdueSummary = {
+      ...summary,
+      timeline: [
+        {
+          contractId: "contract-newer-overdue",
+          company: "두 번째 업체",
+          name: "잔금",
+          amount: 2_000_000,
+          dueDate: "2020-02-10",
+        },
+        {
+          contractId: "contract-oldest-overdue",
+          company: "가장 오래된 업체",
+          name: "계약금",
+          amount: 1_000_000,
+          dueDate: "2020-01-05",
+        },
+      ],
+    };
+    server.use(
+      http.get(`${baseUrl}/wedding-plan`, () => HttpResponse.json(plan)),
+      http.get(`${baseUrl}/finance/summary`, () => HttpResponse.json(overdueSummary)),
+    );
+    render(<DashboardPage />);
+    const oldestDate = await screen.findByRole("gridcell", {
+      name: /2020-01-05, 연체 1건/,
+    });
+    expect(oldestDate).toHaveAttribute("aria-selected", "true");
+    expect(screen.getAllByText("가장 오래된 업체").length).toBeGreaterThan(0);
   });
 });
