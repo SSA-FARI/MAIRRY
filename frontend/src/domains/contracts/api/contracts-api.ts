@@ -18,3 +18,17 @@ export function listContracts(): Promise<ContractList> {
 export function getContract(contractId: string): Promise<ContractDetail> {
   return apiClient<ContractDetail>(`/contracts/${contractId}`);
 }
+
+export function updateContract(
+  contractId: string,
+  payload: ContractConfirm,
+): Promise<ContractDetail> {
+  return apiClient<ContractDetail>(`/contracts/${contractId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteContract(contractId: string): Promise<void> {
+  return apiClient<void>(`/contracts/${contractId}`, { method: "DELETE" });
+}

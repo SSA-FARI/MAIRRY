@@ -7,8 +7,9 @@ import { analyzeDocument, getDocument } from "@/domains/documents";
 import type { DocumentDetail, PaymentStatus } from "@/domains/documents";
 import { ApiError } from "@/shared/api/api-client";
 import { formatWon } from "@/shared/lib/money";
-import { confirmDocument } from "../api/contracts-api";
+import { confirmDocument, getContract, updateContract } from "../api/contracts-api";
 import {
+  createContractForm,
   createReviewForm,
   hasReviewErrors,
   toContractConfirm,
@@ -25,7 +26,19 @@ const emptyErrors: ReviewValidationErrors = {
 };
 
 export function ContractReviewPage({ documentId }: { documentId: string }) {
+  return <ContractFormPage documentId={documentId} />;
+}
+
+export function ContractEditPage({ contractId }: { contractId: string }) {
+  return <ContractFormPage contractId={contractId} />;
+}
+
+type ContractFormPageProps =
+  { documentId: string; contractId?: never } | { contractId: string; documentId?: never };
+
+function ContractFormPage({ documentId, contractId }: ContractFormPageProps) {
   const router = useRouter();
+  const isEditing = contractId !== undefined;
   const [pageState, setPageState] = useState<PageState>("loading");
   const [document, setDocument] = useState<DocumentDetail | null>(null);
   const [form, setForm] = useState<ContractReviewForm | null>(null);
@@ -40,6 +53,14 @@ export function ContractReviewPage({ documentId }: { documentId: string }) {
 
     async function load() {
       try {
+        if (contractId !== undefined) {
+          const contract = await getContract(contractId);
+          if (cancelled) return;
+          setForm(createContractForm(contract));
+          setPageState("ready");
+          return;
+        }
+        if (documentId === undefined) return;
         let current = await getDocument(documentId);
         if (cancelled) return;
 
@@ -82,7 +103,7 @@ export function ContractReviewPage({ documentId }: { documentId: string }) {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [documentId, reloadKey]);
+  }, [contractId, documentId, reloadKey]);
 
   function updatePayment(index: number, field: string, value: string) {
     setForm((current) => {
@@ -113,13 +134,17 @@ export function ContractReviewPage({ documentId }: { documentId: string }) {
     setIsSubmitting(true);
     setErrorMessage("");
     try {
-      const contract = await confirmDocument(documentId, toContractConfirm(form));
+      const contract = isEditing
+        ? await updateContract(contractId, toContractConfirm(form))
+        : await confirmDocument(documentId, toContractConfirm(form));
       router.push(`/contracts/${contract.id}`);
     } catch (error) {
       setErrorMessage(
         error instanceof ApiError
           ? error.message
-          : "계약을 확정하지 못했습니다. 입력값을 확인하고 다시 시도해 주세요.",
+          : isEditing
+            ? "계약을 수정하지 못했습니다. 입력값을 확인하고 다시 시도해 주세요."
+            : "계약을 확정하지 못했습니다. 입력값을 확인하고 다시 시도해 주세요.",
       );
     } finally {
       setIsSubmitting(false);
@@ -163,27 +188,36 @@ export function ContractReviewPage({ documentId }: { documentId: string }) {
     );
   }
 
-  if (!document || !form) return null;
+  if (!form || (!isEditing && !document)) return null;
 
   return (
     <main className="content-page review-page">
-      <nav className="page-nav" aria-label="문서 검수 화면 탐색">
-        <Link href="/documents/upload">계약서 업로드</Link>
+      <nav
+        className="page-nav"
+        aria-label={isEditing ? "계약 수정 화면 탐색" : "문서 검수 화면 탐색"}
+      >
+        <Link href={isEditing ? `/contracts/${contractId}` : "/documents/upload"}>
+          {isEditing ? "계약 상세" : "계약서 업로드"}
+        </Link>
         <span aria-hidden="true">/</span>
-        <span>추출 결과 검수</span>
+        <span>{isEditing ? "계약 수정" : "추출 결과 검수"}</span>
       </nav>
       <header className="page-header">
-        <p className="eyebrow">REVIEW CONTRACT</p>
-        <h1>계약 내용을 확인해 주세요</h1>
-        <p>{document.originalName}에서 추출한 정보입니다. 원문과 다른 내용은 직접 수정해 주세요.</p>
+        <p className="eyebrow">{isEditing ? "EDIT CONTRACT" : "REVIEW CONTRACT"}</p>
+        <h1>{isEditing ? "확정 계약을 수정합니다" : "계약 내용을 확인해 주세요"}</h1>
+        <p>
+          {isEditing
+            ? "저장한 변경사항은 자금 현황과 AI 답변에 즉시 반영됩니다."
+            : `${document?.originalName}에서 추출한 정보입니다. 원문과 다른 내용은 직접 수정해 주세요.`}
+        </p>
       </header>
 
-      {document.status === "FAILED" && (
+      {document?.status === "FAILED" && (
         <aside className="warning-panel" role="status">
           자동 분석에 실패해 빈 입력 화면을 열었습니다. 계약서를 보며 직접 입력해 주세요.
         </aside>
       )}
-      {document.extraction?.warnings.map((warning) => (
+      {document?.extraction?.warnings.map((warning) => (
         <aside className="warning-panel" role="status" key={warning}>
           <strong>확인 필요</strong> {warning}
         </aside>
@@ -403,14 +437,22 @@ export function ContractReviewPage({ documentId }: { documentId: string }) {
             </p>
           )}
           <aside className="confirmation-notice">
-            계약을 확정하기 전에는 지급 금액이 자금 현황과 AI 답변에 반영되지 않습니다.
+            {isEditing
+              ? "수정된 지급 금액과 상태는 저장 즉시 자금 현황과 AI 답변에 반영됩니다."
+              : "계약을 확정하기 전에는 지급 금액이 자금 현황과 AI 답변에 반영되지 않습니다."}
           </aside>
           <div className="form-actions">
-            <Link href="/" className="secondary-link">
-              나중에 확인
+            <Link href={isEditing ? `/contracts/${contractId}` : "/"} className="secondary-link">
+              {isEditing ? "취소" : "나중에 확인"}
             </Link>
             <button type="submit" className="primary-button" disabled={isSubmitting}>
-              {isSubmitting ? "확정하는 중…" : "계약 확정"}
+              {isSubmitting
+                ? isEditing
+                  ? "저장하는 중…"
+                  : "확정하는 중…"
+                : isEditing
+                  ? "변경사항 저장"
+                  : "계약 확정"}
             </button>
           </div>
         </form>

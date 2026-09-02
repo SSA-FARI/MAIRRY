@@ -1,5 +1,5 @@
 import type { DocumentDetail, DocumentType, PaymentStatus } from "@/domains/documents";
-import type { ContractConfirm } from "./types";
+import type { ContractConfirm, ContractDetail } from "./types";
 
 export interface ReviewPaymentInput {
   name: string;
@@ -49,6 +49,25 @@ export function createReviewForm(document: DocumentDetail): ContractReviewForm {
         summary: term.summary,
         sourceText: term.sourceText || null,
       })) ?? [],
+  };
+}
+
+export function createContractForm(contract: ContractDetail): ContractReviewForm {
+  return {
+    documentType: contract.documentType,
+    company: contract.company,
+    totalPrice: contract.totalPrice.toString(),
+    payments: contract.payments.map((payment) => ({
+      name: payment.name,
+      amount: payment.amount.toString(),
+      dueDate: payment.dueDate ?? "",
+      status: payment.status,
+      sourceText: payment.sourceText,
+    })),
+    cancellationTerms: contract.cancellationTerms.map((term) => ({
+      summary: term.summary,
+      sourceText: term.sourceText,
+    })),
   };
 }
 

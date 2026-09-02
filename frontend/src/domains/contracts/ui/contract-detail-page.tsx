@@ -1,17 +1,21 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@/shared/api/api-client";
 import { formatDate } from "@/shared/lib/date";
 import { formatWon } from "@/shared/lib/money";
-import { getContract } from "../api/contracts-api";
+import { deleteContract, getContract } from "../api/contracts-api";
 import type { ContractDetail } from "../model/types";
 
 export function ContractDetailPage({ contractId }: { contractId: string }) {
+  const router = useRouter();
   const [contract, setContract] = useState<ContractDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+  const [deleteError, setDeleteError] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -32,6 +36,29 @@ export function ContractDetailPage({ contractId }: { contractId: string }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function handleDelete() {
+    if (isDeleting || !contract) return;
+    const confirmed = window.confirm(
+      "계약을 삭제하면 자금 현황에서 제외됩니다. 원본 문서는 보존되며 다시 검수할 수 있습니다. 삭제할까요?",
+    );
+    if (!confirmed) return;
+
+    setIsDeleting(true);
+    setDeleteError("");
+    try {
+      await deleteContract(contractId);
+      router.push("/contracts");
+    } catch (error) {
+      setDeleteError(
+        error instanceof ApiError
+          ? error.message
+          : "계약을 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+      );
+    } finally {
+      setIsDeleting(false);
+    }
+  }
 
   if (isLoading) {
     return (
@@ -77,6 +104,25 @@ export function ContractDetailPage({ contractId }: { contractId: string }) {
           <strong>{formatWon(contract.totalPrice)}</strong>
         </div>
       </header>
+
+      <div className="detail-actions" aria-label="계약 관리 작업">
+        <Link href={`/contracts/${contractId}/edit`} className="secondary-link">
+          계약 수정
+        </Link>
+        <button
+          type="button"
+          className="danger-button"
+          disabled={isDeleting}
+          onClick={() => void handleDelete()}
+        >
+          {isDeleting ? "삭제하는 중…" : "계약 삭제"}
+        </button>
+      </div>
+      {deleteError && (
+        <p role="alert" className="page-error">
+          {deleteError}
+        </p>
+      )}
 
       <section className="detail-section" aria-labelledby="payments-title">
         <div className="section-heading">

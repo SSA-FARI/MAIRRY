@@ -21,10 +21,38 @@ from app.domains.contracts.schemas import (
     ContractSummaryRead,
     UpcomingPaymentRead,
 )
+from app.domains.documents.models import Document
 from app.domains.documents.repository import DocumentRepository
 from app.domains.wedding_plan.repository import WeddingPlanRepository
 
 TodayProvider = Callable[[], date]
+
+
+def build_payments(payload: ContractConfirm, *, preserve_evidence: bool) -> list[Payment]:
+    return [
+        Payment(
+            name=payment.name,
+            amount=payment.amount,
+            due_date=payment.due_date,
+            status=payment.status,
+            source_text=payment.source_text if preserve_evidence else None,
+        )
+        for payment in payload.payments
+    ]
+
+
+def build_cancellation_terms(
+    payload: ContractConfirm,
+    *,
+    preserve_evidence: bool,
+) -> list[CancellationTerm]:
+    return [
+        CancellationTerm(
+            summary=term.summary,
+            source_text=term.source_text if preserve_evidence else None,
+        )
+        for term in payload.cancellation_terms
+    ]
 
 
 def build_contract_detail(contract: Contract) -> ContractDetailRead:
@@ -108,23 +136,11 @@ class ContractConfirmationService:
                 total_price=payload.total_price,
                 status=ContractStatus.CONFIRMED,
                 confirmed_by_member_id=member.id,
-                payments=[
-                    Payment(
-                        name=payment.name,
-                        amount=payment.amount,
-                        due_date=payment.due_date,
-                        status=payment.status,
-                        source_text=payment.source_text if preserve_evidence else None,
-                    )
-                    for payment in payload.payments
-                ],
-                cancellation_terms=[
-                    CancellationTerm(
-                        summary=term.summary,
-                        source_text=term.source_text if preserve_evidence else None,
-                    )
-                    for term in payload.cancellation_terms
-                ],
+                payments=build_payments(payload, preserve_evidence=preserve_evidence),
+                cancellation_terms=build_cancellation_terms(
+                    payload,
+                    preserve_evidence=preserve_evidence,
+                ),
             )
             document.document_type = payload.document_type.value
             document.analysis_status = DocumentStatus.CONFIRMED
@@ -150,6 +166,84 @@ class ContractConfirmationService:
             message="확정할 문서 또는 웨딩 계획을 찾을 수 없습니다.",
             status_code=status.HTTP_404_NOT_FOUND,
         )
+
+
+class ContractManagementService:
+    def __init__(self, session: Session, configuration: Settings) -> None:
+        self._session = session
+        self._configuration = configuration
+        self._contracts = ContractRepository(session)
+        self._documents = DocumentRepository()
+        self._plans = WeddingPlanRepository(session)
+
+    def update(self, contract_id: UUID, payload: ContractConfirm) -> ContractDetailRead:
+        try:
+            contract = self._get_contract(contract_id)
+            document = self._get_document(contract)
+            contract.document_type = payload.document_type
+            document.document_type = payload.document_type.value
+            contract.company = payload.company
+            contract.total_price = payload.total_price
+            contract.payments = build_payments(payload, preserve_evidence=True)
+            contract.cancellation_terms = build_cancellation_terms(
+                payload,
+                preserve_evidence=True,
+            )
+            self._session.flush()
+            response = build_contract_detail(contract)
+            self._session.commit()
+            return response
+        except AppError:
+            self._session.rollback()
+            raise
+        except SQLAlchemyError as exc:
+            self._session.rollback()
+            raise ContractQueryService._internal_error("계약을 수정하지 못했습니다.") from exc
+
+    def delete(self, contract_id: UUID) -> None:
+        try:
+            contract = self._get_contract(contract_id)
+            document = self._get_document(contract)
+            document.analysis_status = (
+                DocumentStatus.REVIEW_REQUIRED
+                if document.extraction_raw is not None
+                else DocumentStatus.FAILED
+            )
+            self._contracts.delete(contract)
+            self._session.flush()
+            self._session.commit()
+        except AppError:
+            self._session.rollback()
+            raise
+        except SQLAlchemyError as exc:
+            self._session.rollback()
+            raise ContractQueryService._internal_error("계약을 삭제하지 못했습니다.") from exc
+
+    def _get_contract(self, contract_id: UUID) -> Contract:
+        plan = self._plans.get_current_for_user(self._configuration.demo_user_id)
+        contract = (
+            self._contracts.get_confirmed(plan.id, contract_id, for_update=True)
+            if plan is not None
+            else None
+        )
+        if contract is None:
+            raise AppError(
+                code=ErrorCode.RESOURCE_NOT_FOUND,
+                message="요청한 계약을 찾을 수 없습니다.",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+        return contract
+
+    def _get_document(self, contract: Contract) -> Document:
+        document = self._documents.get_by_id(
+            self._session,
+            contract.document_id,
+            contract.wedding_plan_id,
+            for_update=True,
+        )
+        if document is None:
+            raise ContractConfirmationService._not_found()
+        return document
 
 
 class ContractQueryService:

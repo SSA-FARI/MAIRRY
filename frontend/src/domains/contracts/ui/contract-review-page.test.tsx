@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { ContractReviewPage } from "./contract-review-page";
+import { ContractEditPage, ContractReviewPage } from "./contract-review-page";
 
 const { push } = vi.hoisted(() => ({ push: vi.fn() }));
 
@@ -15,6 +15,7 @@ const documentId = "8f32eb5e-a2ac-44be-8ce8-393d466bc901";
 const contractId = "90af8db0-a099-40a0-bb92-720ec331a6a0";
 const documentUrl = `http://localhost:8000/api/documents/${documentId}`;
 const confirmUrl = `${documentUrl}/confirm`;
+const contractUrl = `http://localhost:8000/api/contracts/${contractId}`;
 const documentResponse = {
   id: documentId,
   originalName: "hall.pdf",
@@ -114,5 +115,38 @@ describe("ContractReviewPage", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("이미 확정된 문서입니다.");
     expect(company).toHaveValue("입력 유지 웨딩홀");
+  });
+});
+
+describe("ContractEditPage", () => {
+  it("loads confirmed values, updates them, and returns to detail", async () => {
+    let receivedBody: unknown;
+    const contract = {
+      id: contractId,
+      documentId,
+      documentType: "WEDDING_HALL",
+      company: "A웨딩홀",
+      totalPrice: 23_000_000,
+      status: "CONFIRMED",
+      payments: documentResponse.extraction.payments,
+      cancellationTerms: [],
+    };
+    server.use(
+      http.get(contractUrl, () => HttpResponse.json(contract)),
+      http.put(contractUrl, async ({ request }) => {
+        receivedBody = await request.json();
+        return HttpResponse.json({ ...contract, company: "수정 웨딩홀" });
+      }),
+    );
+
+    const user = userEvent.setup();
+    render(<ContractEditPage contractId={contractId} />);
+    const company = await screen.findByLabelText("업체명 *");
+    await user.clear(company);
+    await user.type(company, "수정 웨딩홀");
+    await user.click(screen.getByRole("button", { name: "변경사항 저장" }));
+
+    await waitFor(() => expect(push).toHaveBeenCalledWith(`/contracts/${contractId}`));
+    expect(receivedBody).toMatchObject({ company: "수정 웨딩홀" });
   });
 });

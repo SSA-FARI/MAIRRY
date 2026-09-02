@@ -1,5 +1,12 @@
-export { confirmDocument, getContract, listContracts } from "./api/contracts-api";
+export {
+  confirmDocument,
+  deleteContract,
+  getContract,
+  listContracts,
+  updateContract,
+} from "./api/contracts-api";
 export { ContractDetailPage } from "./ui/contract-detail-page";
+export { ContractEditPage } from "./ui/contract-review-page";
 export { ContractListPage } from "./ui/contract-list-page";
 export { ContractReviewPage } from "./ui/contract-review-page";
 export type {

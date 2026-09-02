@@ -114,6 +114,7 @@ def test_plan_01_upsert_and_get_persist_member_and_asset(database_engine: Engine
         assert created.json()["availableAsset"] == 30_000_000
 
         plan_id = uuid.UUID(created.json()["id"])
+        assert plan_id == configuration.demo_wedding_plan_id
         with Session(database_engine) as session:
             member = session.scalar(
                 select(WeddingPlanMember).where(
@@ -123,6 +124,7 @@ def test_plan_01_upsert_and_get_persist_member_and_asset(database_engine: Engine
             )
             asset = session.scalar(select(Asset).where(Asset.wedding_plan_id == plan_id))
             assert member is not None
+            assert member.id == configuration.demo_member_id
             assert member.role == WeddingPlanMemberRole.OWNER
             assert asset is not None
             assert asset.owner_type == AssetOwnerType.JOINT

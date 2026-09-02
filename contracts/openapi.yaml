@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MAIRRY API
-  version: 0.3.0
+  version: 0.4.0
   description: MAIRRY MVP REST contract. JSON fields use camelCase.
 servers:
   - url: http://localhost:8000/api
@@ -93,6 +93,21 @@ paths:
       operationId: getContract
       responses:
         "200": {description: Contract detail, content: {application/json: {schema: {$ref: "#/components/schemas/ContractDetail"}}}}
+        "404": {$ref: "#/components/responses/NotFound"}
+    put:
+      operationId: updateContract
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: "#/components/schemas/ContractConfirm"}}}
+      responses:
+        "200": {description: Updated contract, content: {application/json: {schema: {$ref: "#/components/schemas/ContractDetail"}}}}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/UnprocessableEntity"}
+    delete:
+      operationId: deleteContract
+      description: Delete confirmed contract data, preserve its source document, and reopen document review.
+      responses:
+        "204": {description: Contract deleted}
         "404": {$ref: "#/components/responses/NotFound"}
   /finance/summary:
     get:

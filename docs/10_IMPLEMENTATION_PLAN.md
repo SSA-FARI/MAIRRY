@@ -26,7 +26,7 @@
 | API 명명 | 외부 JSON은 camelCase, Python 내부는 snake_case |
 | 시각 | 저장은 UTC, API date-time은 timezone 포함 ISO 8601 |
 | 동시 요청 | 동일 문서 분석·확정 중복은 409 |
-| 삭제 | MVP 공개 API에서 제외, 운영 데이터 임의 삭제 금지 |
+| 삭제 | 계약만 명시적 확인 후 삭제 가능, 원본 Document·저장 파일은 보존 |
 
 ## 단계와 완료 게이트
 
@@ -54,6 +54,7 @@
 - `UPLOADED → PROCESSING → REVIEW_REQUIRED/FAILED` 상태 전이
 - 폴링, 실패 재시도, 직접 입력
 - 사용자 수정값을 Contract·Payment로 원자적 저장
+- 확정 계약 수정·삭제와 삭제 후 Document 재검수 전환
 - 확정 전 데이터의 금융 계산 제외
 
 완료 게이트: AI-01~03, REVIEW-01~03 통과.
@@ -97,6 +98,8 @@ UPLOADED ──analyze──> PROCESSING ──success──> REVIEW_REQUIRED �
 - PROCESSING 문서의 재분석, CONFIRMED 문서의 재확정은 409다.
 - 분석 실패는 `error.message`에는 사용자용 요약만, 내부 로그에는 원문 없이 추적 ID만 남긴다.
 - 확정은 Contract와 모든 Payment 저장 및 Document 상태 변경을 한 트랜잭션으로 처리한다.
+- 확정 계약 수정은 하위 Payment·CancellationTerm 전체 교체까지 한 트랜잭션으로 처리한다.
+- 계약 삭제는 Contract 하위 데이터 삭제와 Document 상태 복원을 한 트랜잭션으로 처리한다.
 - 폴링 권장 간격은 1초, 데모 타임아웃은 60초이며 타임아웃이 서버 작업을 취소하지는 않는다.
 
 ## 변경 단위

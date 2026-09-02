@@ -61,6 +61,8 @@ MAIRRY MVP REST API의 동작, 검증, 상태 전이를 정의한다. 기계 판
 | PUT | `/documents/{documentId}/confirm` | 200 | 계약 확정 |
 | GET | `/contracts` | 200 | 계약 목록 |
 | GET | `/contracts/{contractId}` | 200 | 계약 상세 |
+| PUT | `/contracts/{contractId}` | 200 | 확정 계약 수정 |
+| DELETE | `/contracts/{contractId}` | 204 | 확정 계약 삭제 및 문서 재검수 전환 |
 | GET | `/finance/summary` | 200 | 금융 요약/타임라인 |
 | POST | `/finance/simulate` | 200 | 저장 없는 시뮬레이션 |
 | POST | `/chat` | 200 | 근거 기반 답변 |
@@ -312,6 +314,23 @@ AI 추출 결과에서는 payment.amount가 null일 수 있지만 확정 요청�
 ```
 
 오류: 404.
+
+### PUT /api/contracts/{contractId}
+
+확정 계약의 검수값을 수정한다. 요청 형식과 검증 규칙은
+`PUT /api/documents/{documentId}/confirm`의 ContractConfirm과 같다. Contract 기본값과
+Payment·CancellationTerm 전체를 한 트랜잭션으로 교체하며 성공 응답은 수정된 Contract 상세다.
+변경된 UNPAID 지급항목은 이후 금융 요약·타임라인·Chat Tool 결과에 즉시 반영한다.
+
+오류: 현재 WeddingPlan의 확정 계약이 아니면 404, 필수값 또는 구조 오류는 422.
+
+### DELETE /api/contracts/{contractId}
+
+현재 WeddingPlan의 확정 Contract와 하위 Payment·CancellationTerm을 삭제한다. 원본 Document와
+저장 파일은 삭제하지 않는다. Document에 추출 결과가 남아 있으면 REVIEW_REQUIRED, 없으면
+FAILED로 전환하여 다시 검수·확정할 수 있게 한다. 성공은 본문 없는 204다.
+
+오류: 현재 WeddingPlan의 확정 계약이 아니면 404.
 
 ## Finance
 

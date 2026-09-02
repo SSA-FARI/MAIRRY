@@ -93,7 +93,8 @@ a {
 .primary-link,
 .primary-button,
 .secondary-link,
-.secondary-button {
+.secondary-button,
+.danger-button {
   min-height: 44px;
   display: inline-flex;
   align-items: center;
@@ -118,6 +119,17 @@ a {
   color: var(--text);
 }
 
+.danger-button {
+  border: 1px solid #e4a29c;
+  background: #fff7f6;
+  color: var(--danger);
+}
+
+.danger-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .primary-button:disabled {
   cursor: wait;
   opacity: 0.65;
@@ -127,6 +139,7 @@ a {
 .primary-button:focus-visible,
 .secondary-link:focus-visible,
 .secondary-button:focus-visible,
+.danger-button:focus-visible,
 .text-link:focus-visible,
 input:focus-visible,
 select:focus-visible,
@@ -245,6 +258,13 @@ textarea:focus-visible {
 .detail-section {
   margin-top: 18px;
   padding: clamp(20px, 4vw, 30px);
+}
+
+.detail-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-bottom: 18px;
 }
 
 .section-heading {
@@ -679,6 +699,11 @@ blockquote span {
 
   .form-actions {
     flex-direction: column-reverse;
+  }
+
+  .detail-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 
