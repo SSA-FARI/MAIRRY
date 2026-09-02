@@ -1,5 +1,5 @@
 import { apiClient } from "@/shared/api/api-client";
-import type { DocumentSummary } from "../model/types";
+import type { DocumentDetail, DocumentSummary } from "../model/types";
 
 export function uploadDocument(file: File): Promise<DocumentSummary> {
   const formData = new FormData();
@@ -9,4 +9,12 @@ export function uploadDocument(file: File): Promise<DocumentSummary> {
     method: "POST",
     body: formData,
   });
+}
+
+export function getDocument(documentId: string): Promise<DocumentDetail> {
+  return apiClient<DocumentDetail>(`/documents/${documentId}`);
+}
+
+export function analyzeDocument(documentId: string): Promise<DocumentDetail> {
+  return apiClient<DocumentDetail>(`/documents/${documentId}/analyze`, { method: "POST" });
 }
