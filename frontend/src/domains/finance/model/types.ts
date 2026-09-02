@@ -11,4 +11,16 @@ export interface FinanceSummary {
   remainingExpense: number;
   expectedBalance: number;
   nearestPayment: UpcomingPayment | null;
+  timeline: UpcomingPayment[];
+}
+
+export interface SimulationRequest {
+  name: string;
+  amount: number;
+}
+
+export interface SimulationResult {
+  currentExpectedBalance: number;
+  simulatedExpectedBalance: number;
+  shortageAmount: number;
 }
