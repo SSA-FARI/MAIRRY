@@ -106,6 +106,8 @@ def test_analyze_document_resolves_to_failed_when_no_fallback_matches() -> None:
         assert payload["status"] == "FAILED"
         assert payload["analysisSource"] is None
         assert payload["extraction"] is None
+        assert payload["error"]["code"] == "AI_PROVIDER_ERROR"
+        assert payload["error"]["message"]
 
 
 def test_analyze_document_allows_retry_from_failed_status() -> None:
@@ -113,7 +115,36 @@ def test_analyze_document_allows_retry_from_failed_status() -> None:
         response = client.post(f"/api/documents/{document_id}/analyze")
 
         assert response.status_code == 202
-        assert response.json()["status"] == "PROCESSING"
+        payload = response.json()
+        assert payload["status"] == "PROCESSING"
+        assert payload["error"] is None
+
+
+def test_analyze_document_retry_clears_previous_failure_error() -> None:
+    """A retry that resolves via demo fallback must not leave the earlier FAILED
+    error hanging around on the now-successful document."""
+    with _stored_document(_DEMO_FALLBACK_CONTENT, status=DocumentStatus.FAILED) as document_id:
+        session = SessionLocal()
+        try:
+            session.query(Document).filter(Document.id == document_id).update(
+                {
+                    "analysis_error": {
+                        "code": "AI_PROVIDER_ERROR",
+                        "message": "이전 실패",
+                        "details": {},
+                    }
+                }
+            )
+            session.commit()
+        finally:
+            session.close()
+
+        client.post(f"/api/documents/{document_id}/analyze")
+        response = client.get(f"/api/documents/{document_id}")
+
+        payload = response.json()
+        assert payload["status"] == "REVIEW_REQUIRED"
+        assert payload["error"] is None
 
 
 @pytest.mark.parametrize(
@@ -180,7 +211,8 @@ def test_start_serializes_concurrent_analyze_requests_via_row_lock() -> None:
 
 def test_process_marks_document_failed_on_unexpected_exception() -> None:
     """Not just AppError/AiError: any surprise failure must still resolve to FAILED,
-    otherwise the document is stuck in PROCESSING with no allowed transition out."""
+    otherwise the document is stuck in PROCESSING with no allowed transition out. The
+    stored error must stay generic (INTERNAL_ERROR) and never echo the exception text."""
     with _stored_document(_DEMO_FALLBACK_CONTENT) as document_id:
         service = DocumentAnalysisService(
             repository=DocumentRepository(),
@@ -190,7 +222,35 @@ def test_process_marks_document_failed_on_unexpected_exception() -> None:
         asyncio.run(service.process(document_id))
 
         response = client.get(f"/api/documents/{document_id}")
-        assert response.json()["status"] == "FAILED"
+        payload = response.json()
+        assert payload["status"] == "FAILED"
+        assert payload["error"]["code"] == "INTERNAL_ERROR"
+        assert "unexpected failure" not in payload["error"]["message"]
+
+
+def test_process_marks_document_failed_with_storage_error_on_read_failure() -> None:
+    """A storage-layer AppError (STORAGE_ERROR) must be preserved as-is instead of being
+    collapsed into a generic INTERNAL_ERROR, so the UI/user gets an accurate reason."""
+    with _stored_document(_DEMO_FALLBACK_CONTENT) as document_id:
+        service = DocumentAnalysisService(
+            repository=DocumentRepository(),
+            storage=Mock(
+                read=Mock(
+                    side_effect=AppError(
+                        code=ErrorCode.STORAGE_ERROR,
+                        message="파일을 불러오지 못했습니다.",
+                        status_code=502,
+                    )
+                )
+            ),
+        )
+
+        asyncio.run(service.process(document_id))
+
+        response = client.get(f"/api/documents/{document_id}")
+        payload = response.json()
+        assert payload["status"] == "FAILED"
+        assert payload["error"]["code"] == "STORAGE_ERROR"
 
 
 def test_process_cleans_up_temp_file_when_write_fails() -> None:
