@@ -75,10 +75,38 @@ def test_chat_01_04_schedule_answer_preserves_tool_date_amount_and_evidence() ->
 
     response = service.process("가장 가까운 잔금일은 언제야?")
 
-    assert registry.calls == [("getUpcomingPayments", {"limit": 1}, USER_ID)]
+    assert registry.calls == [
+        (
+            "getUpcomingPayments",
+            {"limit": 1, "contractId": str(CONTRACT_ID)},
+            USER_ID,
+        )
+    ]
     assert "2027-04-30" in response.answer
     assert "20,000,000원" in response.answer
     assert response.citations[0].source_text.startswith("잔금 20,000,000원")
+
+
+def test_schedule_question_resolves_company_to_contract_filter() -> None:
+    result = ToolResultView(
+        status="NOT_FOUND",
+        tool_name="getUpcomingPayments",
+        data=None,
+        evidence=[],
+        calculated_at=NOW,
+        error={"message": "no payment"},
+    )
+    service, registry = _service(ChatIntent.SCHEDULE, {"limit": 1}, result)
+
+    service.process("A웨딩홀 잔금일 언제야?")
+
+    assert registry.calls == [
+        (
+            "getUpcomingPayments",
+            {"limit": 1, "contractId": str(CONTRACT_ID)},
+            USER_ID,
+        )
+    ]
 
 
 def test_chat_02_05_finance_answer_and_calculation_use_identical_values() -> None:

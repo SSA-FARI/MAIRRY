@@ -32,7 +32,10 @@ class ChatOrchestrationService:
             return self._unsupported_response()
 
         arguments = dict(decision.arguments)
-        if decision.intent == ChatIntent.CONTRACT and "contractId" not in arguments:
+        if (
+            decision.intent in {ChatIntent.CONTRACT, ChatIntent.SCHEDULE}
+            and "contractId" not in arguments
+        ):
             contract_id = self._tools.resolve_contract_id(
                 message,
                 self._configuration.demo_user_id,
