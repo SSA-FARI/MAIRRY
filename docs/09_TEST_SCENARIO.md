@@ -66,6 +66,8 @@
 | CONTRACT-04 | 계약 삭제 | AI 추출 문서의 계약 삭제 | Document가 REVIEW_REQUIRED로 전환 |
 | CONTRACT-05 | 계약 삭제 | 직접 입력 문서의 계약 삭제 | Document가 FAILED로 전환 |
 | CONTRACT-06 | 사용자 격리 | 다른 계획의 계약 수정·삭제 | 404, 원본 데이터 유지 |
+| CONTRACT-07 | 지급상태 변경 | 계약 상세에서 미지급 항목을 지급 완료로 변경 | 해당 Payment만 PAID, 금융 남은 지출에서 즉시 제외 |
+| CONTRACT-08 | 지급상태 격리 | 다른 계약의 paymentId로 상태 변경 | 404, 대상 Payment 상태 유지 |
 | FIN-01 | 계산 | 기준 데이터 계산 | 남은 지출 2천만 원, 잔액 1천만 원 |
 | FIN-02 | 계산 | PAID 항목 포함 계약 | PAID 금액은 남은 지출에서 제외 |
 | FIN-03 | 계산 | 추가지출 3백만 원 | 시뮬레이션 잔액 7백만 원 |

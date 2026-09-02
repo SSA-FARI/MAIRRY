@@ -46,6 +46,7 @@ def test_contract_detail_preserves_nullable_dates_and_evidence() -> None:
         status="CONFIRMED",
         payments=[
             {
+                "id": uuid4(),
                 "name": "잔금",
                 "amount": 20_000_000,
                 "due_date": None,

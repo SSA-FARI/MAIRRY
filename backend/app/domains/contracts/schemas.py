@@ -50,11 +50,16 @@ class ContractConfirm(ApiModel):
 
 
 class ConfirmedPaymentRead(ApiModel):
+    id: UUID
     name: str
     amount: int = Field(ge=0)
     due_date: date | None
     status: PaymentStatus
     source_text: str | None
+
+
+class PaymentStatusUpdate(ApiModel):
+    status: PaymentStatus
 
 
 class ConfirmedCancellationTermRead(ApiModel):

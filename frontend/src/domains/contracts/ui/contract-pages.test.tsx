@@ -81,6 +81,7 @@ describe("contract pages", () => {
           status: "CONFIRMED",
           payments: [
             {
+              id: "10000000-0000-0000-0000-000000000001",
               name: "잔금",
               amount: 20_000_000,
               dueDate: "2027-04-30",
@@ -123,6 +124,7 @@ describe("contract pages", () => {
           status: "CONFIRMED",
           payments: [
             {
+              id: "10000000-0000-0000-0000-000000000001",
               name: "잔금",
               amount: 20_000_000,
               dueDate: "2027-04-30",
@@ -142,5 +144,45 @@ describe("contract pages", () => {
     await user.click(await screen.findByRole("button", { name: "계약 삭제" }));
 
     await waitFor(() => expect(push).toHaveBeenCalledWith("/contracts"));
+  });
+
+  it("updates a payment status directly from contract detail", async () => {
+    const paymentId = "10000000-0000-0000-0000-000000000001";
+    const detail = {
+      id: contractId,
+      documentId: "8f32eb5e-a2ac-44be-8ce8-393d466bc901",
+      documentType: "WEDDING_HALL",
+      company: "A웨딩홀",
+      totalPrice: 23_000_000,
+      status: "CONFIRMED",
+      payments: [
+        {
+          id: paymentId,
+          name: "잔금",
+          amount: 20_000_000,
+          dueDate: "2027-04-30",
+          status: "UNPAID",
+          sourceText: null,
+        },
+      ],
+      cancellationTerms: [],
+    };
+    server.use(
+      http.get(detailUrl, () => HttpResponse.json(detail)),
+      http.patch(`${detailUrl}/payments/${paymentId}`, async ({ request }) => {
+        expect(await request.json()).toEqual({ status: "PAID" });
+        return HttpResponse.json({
+          ...detail,
+          payments: [{ ...detail.payments[0], status: "PAID" }],
+        });
+      }),
+    );
+
+    const user = userEvent.setup();
+    render(<ContractDetailPage contractId={contractId} />);
+    await user.selectOptions(await screen.findByLabelText("잔금 지급상태"), "PAID");
+
+    await waitFor(() => expect(screen.getByLabelText("잔금 지급상태")).toHaveValue("PAID"));
+    expect(screen.getByText("지급 완료", { selector: ".payment-status" })).toBeVisible();
   });
 });

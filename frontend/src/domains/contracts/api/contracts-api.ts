@@ -1,5 +1,6 @@
 import { apiClient } from "@/shared/api/api-client";
 import type { ContractConfirm, ContractDetail, ContractList } from "../model/types";
+import type { PaymentStatus } from "@/domains/documents";
 
 export function confirmDocument(
   documentId: string,
@@ -31,4 +32,15 @@ export function updateContract(
 
 export function deleteContract(contractId: string): Promise<void> {
   return apiClient<void>(`/contracts/${contractId}`, { method: "DELETE" });
+}
+
+export function updatePaymentStatus(
+  contractId: string,
+  paymentId: string,
+  status: PaymentStatus,
+): Promise<ContractDetail> {
+  return apiClient<ContractDetail>(`/contracts/${contractId}/payments/${paymentId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
 }

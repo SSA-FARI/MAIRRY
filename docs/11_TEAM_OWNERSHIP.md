@@ -66,7 +66,7 @@
 
 - 추출 결과 검수·수정 UI
 - Contract·Payment 확정 트랜잭션
-- 확정 Contract·Payment 수정·삭제 및 Document 재검수 전환
+- 확정 Contract·Payment 수정·삭제, 지급상태 간편 변경 및 Document 재검수 전환
 - 계약 목록·상세와 원문 근거 표시
 - Intent 결과를 Backend Tool 호출로 연결
 - `getContractDetails`, `getUpcomingPayments` Tool

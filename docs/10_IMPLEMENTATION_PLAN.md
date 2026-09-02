@@ -55,6 +55,7 @@
 - 폴링, 실패 재시도, 직접 입력
 - 사용자 수정값을 Contract·Payment로 원자적 저장
 - 확정 계약 수정·삭제와 삭제 후 Document 재검수 전환
+- 계약 상세의 지급항목 상태 간편 변경과 금융 계산 즉시 반영
 - 확정 전 데이터의 금융 계산 제외
 
 완료 게이트: AI-01~03, REVIEW-01~03 통과.
@@ -99,6 +100,7 @@ UPLOADED ──analyze──> PROCESSING ──success──> REVIEW_REQUIRED �
 - 분석 실패는 `error.message`에는 사용자용 요약만, 내부 로그에는 원문 없이 추적 ID만 남긴다.
 - 확정은 Contract와 모든 Payment 저장 및 Document 상태 변경을 한 트랜잭션으로 처리한다.
 - 확정 계약 수정은 하위 Payment·CancellationTerm 전체 교체까지 한 트랜잭션으로 처리한다.
+- 지급상태 간편 변경은 현재 계약에 속한 Payment 한 건만 수정하고 갱신된 Contract 상세를 반환한다.
 - 계약 삭제는 Contract 하위 데이터 삭제와 Document 상태 복원을 한 트랜잭션으로 처리한다.
 - 폴링 권장 간격은 1초, 데모 타임아웃은 60초이며 타임아웃이 서버 작업을 취소하지는 않는다.
 

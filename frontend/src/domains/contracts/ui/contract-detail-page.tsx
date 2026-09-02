@@ -6,7 +6,8 @@ import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@/shared/api/api-client";
 import { formatDate } from "@/shared/lib/date";
 import { formatWon } from "@/shared/lib/money";
-import { deleteContract, getContract } from "../api/contracts-api";
+import type { PaymentStatus } from "@/domains/documents";
+import { deleteContract, getContract, updatePaymentStatus } from "../api/contracts-api";
 import type { ContractDetail } from "../model/types";
 
 export function ContractDetailPage({ contractId }: { contractId: string }) {
@@ -16,6 +17,8 @@ export function ContractDetailPage({ contractId }: { contractId: string }) {
   const [errorMessage, setErrorMessage] = useState("");
   const [deleteError, setDeleteError] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
+  const [updatingPaymentId, setUpdatingPaymentId] = useState<string | null>(null);
+  const [paymentError, setPaymentError] = useState("");
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -57,6 +60,23 @@ export function ContractDetailPage({ contractId }: { contractId: string }) {
       );
     } finally {
       setIsDeleting(false);
+    }
+  }
+
+  async function handlePaymentStatusChange(paymentId: string, nextStatus: PaymentStatus) {
+    if (!contract || updatingPaymentId) return;
+    setUpdatingPaymentId(paymentId);
+    setPaymentError("");
+    try {
+      setContract(await updatePaymentStatus(contractId, paymentId, nextStatus));
+    } catch (error) {
+      setPaymentError(
+        error instanceof ApiError
+          ? error.message
+          : "지급상태를 변경하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+      );
+    } finally {
+      setUpdatingPaymentId(null);
     }
   }
 
@@ -129,9 +149,17 @@ export function ContractDetailPage({ contractId }: { contractId: string }) {
           <h2 id="payments-title">지급항목</h2>
           <span>{contract.payments.length}건</span>
         </div>
+        <p className="section-description">
+          실제 지급 여부가 바뀌면 상태를 바로 변경하세요. 미지급 금액만 자금 현황에 반영됩니다.
+        </p>
+        {paymentError && (
+          <p role="alert" className="page-error">
+            {paymentError}
+          </p>
+        )}
         <div className="detail-list">
-          {contract.payments.map((payment, index) => (
-            <article className="detail-item" key={`${payment.name}-${index}`}>
+          {contract.payments.map((payment) => (
+            <article className="detail-item" key={payment.id}>
               <div className="detail-item-main">
                 <div>
                   <span className={`payment-status payment-status-${payment.status.toLowerCase()}`}>
@@ -144,7 +172,32 @@ export function ContractDetailPage({ contractId }: { contractId: string }) {
                   <h3>{payment.name}</h3>
                   <p>{formatDate(payment.dueDate)}</p>
                 </div>
-                <strong>{formatWon(payment.amount)}</strong>
+                <div className="payment-item-actions">
+                  <strong>{formatWon(payment.amount)}</strong>
+                  <label>
+                    <span className="sr-only">{payment.name} 지급상태</span>
+                    <select
+                      aria-label={`${payment.name} 지급상태`}
+                      value={payment.status}
+                      disabled={updatingPaymentId !== null}
+                      onChange={(event) =>
+                        void handlePaymentStatusChange(
+                          payment.id,
+                          event.target.value as PaymentStatus,
+                        )
+                      }
+                    >
+                      <option value="UNPAID">미지급</option>
+                      <option value="PAID">지급 완료</option>
+                      <option value="UNKNOWN">확인 필요</option>
+                    </select>
+                  </label>
+                  {updatingPaymentId === payment.id && (
+                    <span className="payment-update-status" role="status">
+                      변경 중…
+                    </span>
+                  )}
+                </div>
               </div>
               {payment.sourceText && (
                 <blockquote>

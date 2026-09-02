@@ -1,11 +1,15 @@
 import type { DocumentType, PaymentStatus } from "@/domains/documents";
 
-export interface ConfirmedPayment {
+export interface ConfirmedPaymentInput {
   name: string;
   amount: number;
   dueDate: string | null;
   status: PaymentStatus;
   sourceText: string | null;
+}
+
+export interface ConfirmedPayment extends ConfirmedPaymentInput {
+  id: string;
 }
 
 export interface ConfirmedCancellationTerm {
@@ -17,7 +21,7 @@ export interface ContractConfirm {
   documentType: DocumentType;
   company: string;
   totalPrice: number;
-  payments: ConfirmedPayment[];
+  payments: ConfirmedPaymentInput[];
   cancellationTerms: ConfirmedCancellationTerm[];
 }
 
@@ -41,8 +45,9 @@ export interface ContractList {
   items: ContractSummary[];
 }
 
-export interface ContractDetail extends ContractConfirm {
+export interface ContractDetail extends Omit<ContractConfirm, "payments"> {
   id: string;
   documentId: string;
   status: "CONFIRMED";
+  payments: ConfirmedPayment[];
 }

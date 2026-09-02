@@ -3,6 +3,7 @@ export {
   deleteContract,
   getContract,
   listContracts,
+  updatePaymentStatus,
   updateContract,
 } from "./api/contracts-api";
 export { ContractDetailPage } from "./ui/contract-detail-page";
@@ -12,6 +13,7 @@ export { ContractReviewPage } from "./ui/contract-review-page";
 export type {
   ConfirmedCancellationTerm,
   ConfirmedPayment,
+  ConfirmedPaymentInput,
   ContractConfirm,
   ContractDetail,
   ContractList,

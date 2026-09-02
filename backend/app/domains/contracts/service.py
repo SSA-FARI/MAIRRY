@@ -19,6 +19,7 @@ from app.domains.contracts.schemas import (
     ContractDetailRead,
     ContractListRead,
     ContractSummaryRead,
+    PaymentStatusUpdate,
     UpcomingPaymentRead,
 )
 from app.domains.documents.models import Document
@@ -73,6 +74,7 @@ def build_contract_detail(contract: Contract) -> ContractDetailRead:
         status=contract.status,
         payments=[
             ConfirmedPaymentRead(
+                id=payment.id,
                 name=payment.name,
                 amount=payment.amount,
                 due_date=payment.due_date,
@@ -218,6 +220,36 @@ class ContractManagementService:
         except SQLAlchemyError as exc:
             self._session.rollback()
             raise ContractQueryService._internal_error("계약을 삭제하지 못했습니다.") from exc
+
+    def update_payment_status(
+        self,
+        contract_id: UUID,
+        payment_id: UUID,
+        payload: PaymentStatusUpdate,
+    ) -> ContractDetailRead:
+        try:
+            contract = self._get_contract(contract_id)
+            payment = next(
+                (item for item in contract.payments if item.id == payment_id),
+                None,
+            )
+            if payment is None:
+                raise AppError(
+                    code=ErrorCode.RESOURCE_NOT_FOUND,
+                    message="요청한 지급항목을 찾을 수 없습니다.",
+                    status_code=status.HTTP_404_NOT_FOUND,
+                )
+            payment.status = payload.status
+            self._session.flush()
+            response = build_contract_detail(contract)
+            self._session.commit()
+            return response
+        except AppError:
+            self._session.rollback()
+            raise
+        except SQLAlchemyError as exc:
+            self._session.rollback()
+            raise ContractQueryService._internal_error("지급상태를 변경하지 못했습니다.") from exc
 
     def _get_contract(self, contract_id: UUID) -> Contract:
         plan = self._plans.get_current_for_user(self._configuration.demo_user_id)

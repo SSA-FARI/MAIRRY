@@ -7,7 +7,12 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
 from app.core.errors import ErrorResponse
-from app.domains.contracts.schemas import ContractConfirm, ContractDetailRead, ContractListRead
+from app.domains.contracts.schemas import (
+    ContractConfirm,
+    ContractDetailRead,
+    ContractListRead,
+    PaymentStatusUpdate,
+)
 from app.domains.contracts.service import ContractManagementService, ContractQueryService
 
 router = APIRouter(prefix="/contracts", tags=["contracts"])
@@ -65,3 +70,22 @@ def delete_contract(
 ) -> Response:
     ContractManagementService(db, configuration).delete(contract_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.patch(
+    "/{contract_id}/payments/{payment_id}",
+    response_model=ContractDetailRead,
+    responses={404: {"model": ErrorResponse, "description": "Contract or payment not found"}},
+)
+def update_payment_status(
+    contract_id: UUID,
+    payment_id: UUID,
+    payload: PaymentStatusUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    configuration: Annotated[Settings, Depends(get_settings)],
+) -> ContractDetailRead:
+    return ContractManagementService(db, configuration).update_payment_status(
+        contract_id,
+        payment_id,
+        payload,
+    )

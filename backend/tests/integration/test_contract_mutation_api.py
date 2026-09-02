@@ -219,15 +219,15 @@ def test_contract_01_update_replaces_children_and_finance_values(
 
         assert response.status_code == 200
         assert response.json()["company"] == "수정 웨딩홀"
-        assert response.json()["payments"] == [
-            {
-                "name": "수정 잔금",
-                "amount": 15_000_000,
-                "dueDate": "2099-05-01",
-                "status": "UNPAID",
-                "sourceText": "수정 근거",
-            }
-        ]
+        assert len(response.json()["payments"]) == 1
+        assert response.json()["payments"][0] == {
+            "id": response.json()["payments"][0]["id"],
+            "name": "수정 잔금",
+            "amount": 15_000_000,
+            "dueDate": "2099-05-01",
+            "status": "UNPAID",
+            "sourceText": "수정 근거",
+        }
         assert response.json()["cancellationTerms"] == [
             {"summary": "수정 취소조건", "sourceText": "수정 취소 근거"}
         ]
@@ -317,6 +317,63 @@ def test_contract_06_other_plan_cannot_update_or_delete(database_engine: Engine)
             other_contract = session.get(Contract, other_contract_id)
             assert other_contract is not None
             assert other_contract.company == "기존 웨딩홀"
+    finally:
+        app.dependency_overrides.clear()
+        _cleanup(database_engine, [user_id, other_user_id])
+
+
+def test_contract_07_updates_only_selected_payment_status_and_finance(
+    database_engine: Engine,
+) -> None:
+    user_id = uuid.uuid4()
+    _cleanup(database_engine, [user_id])
+    contract_id, _document_id = _create_context(database_engine, user_id)
+    _override_dependencies(database_engine, _configuration(str(database_engine.url), user_id))
+    try:
+        client = TestClient(app)
+        detail = client.get(f"/api/contracts/{contract_id}").json()
+        payment_id = detail["payments"][0]["id"]
+
+        response = client.patch(
+            f"/api/contracts/{contract_id}/payments/{payment_id}",
+            json={"status": "PAID"},
+        )
+        finance = client.get("/api/finance/summary")
+
+        assert response.status_code == 200
+        assert response.json()["payments"][0]["status"] == "PAID"
+        assert finance.status_code == 200
+        assert finance.json()["remainingExpense"] == 0
+    finally:
+        app.dependency_overrides.clear()
+        _cleanup(database_engine, [user_id])
+
+
+def test_contract_08_rejects_payment_from_another_contract(database_engine: Engine) -> None:
+    user_id = uuid.uuid4()
+    other_user_id = uuid.uuid4()
+    _cleanup(database_engine, [user_id, other_user_id])
+    contract_id, _document_id = _create_context(database_engine, user_id)
+    other_contract_id, _other_document_id = _create_context(database_engine, other_user_id)
+    _override_dependencies(database_engine, _configuration(str(database_engine.url), user_id))
+    try:
+        client = TestClient(app)
+        with Session(database_engine) as session:
+            other_payment_id = session.scalar(
+                select(Payment.id).where(Payment.contract_id == other_contract_id)
+            )
+        assert other_payment_id is not None
+
+        response = client.patch(
+            f"/api/contracts/{contract_id}/payments/{other_payment_id}",
+            json={"status": "PAID"},
+        )
+
+        assert response.status_code == 404
+        with Session(database_engine) as session:
+            payment = session.get(Payment, other_payment_id)
+            assert payment is not None
+            assert payment.status == PaymentStatus.UNPAID
     finally:
         app.dependency_overrides.clear()
         _cleanup(database_engine, [user_id, other_user_id])
