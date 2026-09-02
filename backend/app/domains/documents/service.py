@@ -144,7 +144,7 @@ class DocumentAnalysisService:
                     error.code,
                 )
                 await anyio.to_thread.run_sync(db.rollback)
-                await anyio.to_thread.run_sync(self._mark_failed, db, document_id, error)
+                await anyio.to_thread.run_sync(self._mark_failed, document_id, error)
         finally:
             await anyio.to_thread.run_sync(db.close)
 
@@ -190,17 +190,21 @@ class DocumentAnalysisService:
         db.commit()
 
     @staticmethod
-    def _mark_failed(db: Session, document_id: uuid.UUID, error: ErrorBody) -> None:
-        """Updates by id instead of mutating the loaded ORM instance: this runs right after
-        db.rollback(), which expires every object still attached to the session, so writing
-        through a fresh identity-based query avoids relying on that stale attribute state."""
-        db.query(Document).filter(Document.id == document_id).update(
-            {
-                "analysis_status": DocumentStatus.FAILED,
-                "analysis_error": error.model_dump(mode="json"),
-            }
-        )
-        db.commit()
+    def _mark_failed(document_id: uuid.UUID, error: ErrorBody) -> None:
+        """Opens its own session instead of reusing process()'s session: if the failure that
+        triggered this call was itself a broken DB connection, the just-rolled-back session
+        may still be unusable, and recording FAILED must not depend on it recovering."""
+        db = SessionLocal()
+        try:
+            db.query(Document).filter(Document.id == document_id).update(
+                {
+                    "analysis_status": DocumentStatus.FAILED,
+                    "analysis_error": error.model_dump(mode="json"),
+                }
+            )
+            db.commit()
+        finally:
+            db.close()
 
 
 def get_document_analysis_service() -> DocumentAnalysisService:
