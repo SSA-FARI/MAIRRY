@@ -10,6 +10,15 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace }),
 }));
 
+vi.mock("@/domains/finance", () => ({
+  DashboardPage: () => (
+    <main>
+      <h1>우리 결혼 자금 현황</h1>
+      <p>Demo User님, 반가워요.</p>
+    </main>
+  ),
+}));
+
 const demoSession = {
   user: {
     id: "00000000-0000-0000-0000-000000000001",

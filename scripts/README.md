@@ -14,7 +14,15 @@
 .\scripts\docker.ps1 status
 .\scripts\docker.ps1 test
 .\scripts\docker.ps1 down
+
+# Demo User의 WeddingPlan, Asset, Contract, Payment를 중복 없이 생성·갱신
+.\scripts\seed-demo.ps1
 ```
+
+`seed-demo.ps1`은 먼저 migration head를 적용한 뒤 설정된 `DEMO_USER_ID`의 현재 활성 계획에
+재실행 가능한 Demo 데이터를 넣습니다. 기존 활성 계획이 있으면 중복 계획을 만들지 않으며,
+Seed가 관리하는 계약·지급항목은 고정 UUID로 갱신합니다. 지급일과 결혼일은 실행일을 기준으로
+다시 설정되어 대시보드의 다음 지급과 타임라인이 항상 확인 가능합니다.
 
 `validate-contracts.ps1`은 기본적으로 `backend/.venv`를 사용한다. 다른 Python을 사용할 때는
 `-PythonExe`를 전달한다. DB migration은 Service의 실행과 분리해 한 번만 수행한다.

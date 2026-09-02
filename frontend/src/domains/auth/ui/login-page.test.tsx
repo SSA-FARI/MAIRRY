@@ -52,8 +52,11 @@ describe("LoginPage", () => {
     renderLoginPage();
 
     expect(screen.getByRole("heading", { name: "우리의 결혼 준비를 한곳에서" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "금융 대시보드 체험하기" })).toBeVisible();
     expect(await screen.findByRole("button", { name: "데모 계정으로 시작하기" })).toBeEnabled();
     expect(screen.getByText("Demo Mode")).toBeVisible();
+    expect(screen.getByText("자금 현황")).toBeVisible();
+    expect(screen.getByText("지급 일정")).toBeVisible();
   });
 
   it("sends one bodyless request, blocks duplicate clicks, and stores only public profile data", async () => {
