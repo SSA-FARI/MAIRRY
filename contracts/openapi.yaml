@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MAIRRY API
-  version: 0.3.0
+  version: 0.5.0
   description: MAIRRY MVP REST contract. JSON fields use camelCase.
 servers:
   - url: http://localhost:8000/api
@@ -94,6 +94,34 @@ paths:
       responses:
         "200": {description: Contract detail, content: {application/json: {schema: {$ref: "#/components/schemas/ContractDetail"}}}}
         "404": {$ref: "#/components/responses/NotFound"}
+    put:
+      operationId: updateContract
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: "#/components/schemas/ContractConfirm"}}}
+      responses:
+        "200": {description: Updated contract, content: {application/json: {schema: {$ref: "#/components/schemas/ContractDetail"}}}}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/UnprocessableEntity"}
+    delete:
+      operationId: deleteContract
+      description: Delete confirmed contract data, preserve its source document, and reopen document review.
+      responses:
+        "204": {description: Contract deleted}
+        "404": {$ref: "#/components/responses/NotFound"}
+  /contracts/{contractId}/payments/{paymentId}:
+    parameters:
+      - {$ref: "#/components/parameters/ContractId"}
+      - {$ref: "#/components/parameters/PaymentId"}
+    patch:
+      operationId: updatePaymentStatus
+      description: Update one confirmed payment status and return the refreshed contract detail.
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: "#/components/schemas/PaymentStatusUpdate"}}}
+      responses:
+        "200": {description: Updated contract, content: {application/json: {schema: {$ref: "#/components/schemas/ContractDetail"}}}}
+        "404": {$ref: "#/components/responses/NotFound"}
   /finance/summary:
     get:
       operationId: getFinanceSummary
@@ -124,6 +152,7 @@ components:
   parameters:
     DocumentId: {in: path, name: documentId, required: true, schema: {type: string, format: uuid}}
     ContractId: {in: path, name: contractId, required: true, schema: {type: string, format: uuid}}
+    PaymentId: {in: path, name: paymentId, required: true, schema: {type: string, format: uuid}}
   requestBodies:
     WeddingPlanUpsert:
       required: true
@@ -217,7 +246,7 @@ components:
         status: {$ref: "#/components/schemas/PaymentStatus"}
         sourceText: {type: string}
       additionalProperties: false
-    ConfirmedPayment:
+    ConfirmedPaymentInput:
       type: object
       required: [name, amount, dueDate, status, sourceText]
       properties:
@@ -226,6 +255,23 @@ components:
         dueDate: {type: [string, "null"], format: date}
         status: {$ref: "#/components/schemas/PaymentStatus"}
         sourceText: {type: [string, "null"]}
+      additionalProperties: false
+    ConfirmedPayment:
+      type: object
+      required: [id, name, amount, dueDate, status, sourceText]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string, minLength: 1}
+        amount: {type: integer, minimum: 0}
+        dueDate: {type: [string, "null"], format: date}
+        status: {$ref: "#/components/schemas/PaymentStatus"}
+        sourceText: {type: [string, "null"]}
+      additionalProperties: false
+    PaymentStatusUpdate:
+      type: object
+      required: [status]
+      properties:
+        status: {$ref: "#/components/schemas/PaymentStatus"}
       additionalProperties: false
     CancellationTerm:
       type: object
@@ -257,7 +303,7 @@ components:
         documentType: {$ref: "#/components/schemas/DocumentType"}
         company: {type: string, minLength: 1}
         totalPrice: {type: integer, minimum: 0}
-        payments: {type: array, minItems: 1, items: {$ref: "#/components/schemas/ConfirmedPayment"}}
+        payments: {type: array, minItems: 1, items: {$ref: "#/components/schemas/ConfirmedPaymentInput"}}
         cancellationTerms: {type: array, items: {$ref: "#/components/schemas/ConfirmedCancellationTerm"}}
       additionalProperties: false
     UpcomingPayment:

@@ -68,11 +68,14 @@ class WeddingPlanService:
         DemoLoginService(self._session, self._configuration).login()
 
     def _create_plan(self, payload: WeddingPlanUpsert) -> WeddingPlan:
-        plan = WeddingPlan(id=uuid.uuid4(), wedding_date=payload.wedding_date)
+        plan = WeddingPlan(
+            id=self._configuration.demo_wedding_plan_id,
+            wedding_date=payload.wedding_date,
+        )
         self._plans.add_plan(plan)
         self._plans.add_member(
             WeddingPlanMember(
-                id=uuid.uuid4(),
+                id=self._configuration.demo_member_id,
                 wedding_plan_id=plan.id,
                 user_id=self._configuration.demo_user_id,
                 role=WeddingPlanMemberRole.OWNER,

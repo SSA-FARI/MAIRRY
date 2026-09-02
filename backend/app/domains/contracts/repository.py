@@ -23,7 +23,13 @@ class ContractRepository:
         )
         return list(self._session.scalars(statement).all())
 
-    def get_confirmed(self, wedding_plan_id: UUID, contract_id: UUID) -> Contract | None:
+    def get_confirmed(
+        self,
+        wedding_plan_id: UUID,
+        contract_id: UUID,
+        *,
+        for_update: bool = False,
+    ) -> Contract | None:
         statement = (
             select(Contract)
             .where(
@@ -36,7 +42,12 @@ class ContractRepository:
                 selectinload(Contract.cancellation_terms),
             )
         )
+        if for_update:
+            statement = statement.with_for_update()
         return self._session.scalar(statement)
 
     def add(self, contract: Contract) -> None:
         self._session.add(contract)
+
+    def delete(self, contract: Contract) -> None:
+        self._session.delete(contract)

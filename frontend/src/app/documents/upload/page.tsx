@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { DocumentUpload } from "@/domains/documents";
+import { DocumentUploadFlow } from "@/domains/documents";
 
 export default function DocumentUploadPage() {
   return (
@@ -13,7 +13,7 @@ export default function DocumentUploadPage() {
           웨딩홀, 스튜디오 등 계약서 파일을 업로드하면 AI가 내용을 분석합니다.
         </p>
       </header>
-      <DocumentUpload />
+      <DocumentUploadFlow />
     </main>
   );
 }

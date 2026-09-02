@@ -37,19 +37,14 @@ export function DashboardPage() {
             계약서를 등록하면 남은 지급 일정과 예상 잔액을 계산합니다.
           </p>
         </div>
-        <Link
-          href="/documents/upload"
-          style={{
-            background: "var(--primary)",
-            color: "#fff",
-            borderRadius: 8,
-            padding: "10px 18px",
-            fontWeight: 600,
-            whiteSpace: "nowrap",
-          }}
-        >
-          계약서 업로드
-        </Link>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <Link href="/contracts" className="secondary-link">
+            계약 관리
+          </Link>
+          <Link href="/documents/upload" className="primary-link">
+            계약서 업로드
+          </Link>
+        </div>
       </header>
       <section
         style={{
