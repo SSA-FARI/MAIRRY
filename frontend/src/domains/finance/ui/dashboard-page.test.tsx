@@ -46,14 +46,9 @@ describe("DashboardPage", () => {
       http.get(`${baseUrl}/finance/summary`, () => HttpResponse.json(summary)),
     );
     render(<DashboardPage />);
-    expect(
-      await screen.findByRole("heading", { name: "우리 결혼 자금 현황" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "우리 결혼 자금 현황" })).toBeInTheDocument();
     expect(screen.getByText("마리님, 반가워요.")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "계약 관리" })).toHaveAttribute(
-      "href",
-      "/contracts",
-    );
+    expect(screen.getByRole("link", { name: "계약 관리" })).toHaveAttribute("href", "/contracts");
     expect(screen.getByRole("link", { name: "계약서 업로드" })).toHaveAttribute(
       "href",
       "/documents/upload",
