@@ -74,7 +74,8 @@ export function FinanceDashboard({
           <a className="active" href="#dashboard">
             금융 대시보드
           </a>
-          <Link href="/documents/upload">계약서</Link>
+          <Link href="/contracts">계약 관리</Link>
+          <Link href="/documents/upload">계약서 업로드</Link>
           <span aria-disabled="true">AI 질문</span>
         </nav>
         <div className="finance-header-actions">
@@ -83,6 +84,18 @@ export function FinanceDashboard({
       </header>
 
       <main id="dashboard" className="finance-main">
+        <section className="finance-intro" aria-labelledby="finance-dashboard-title">
+          <div>
+            <span className="panel-eyebrow">WEDDING FINANCE PLANNER</span>
+            <h1 id="finance-dashboard-title">우리 결혼 자금 현황</h1>
+          </div>
+          <div className="finance-intro-copy">
+            <p className="dashboard-user" aria-label="현재 데모 사용자">
+              {displayName}님, 반가워요.
+            </p>
+            <p>계약서를 등록하면 남은 지급 일정과 예상 잔액을 계산합니다.</p>
+          </div>
+        </section>
         {financeError && <InlineError message={financeError} onRetry={onRetry} />}
         <FinanceSummaryRow
           plan={plan}
