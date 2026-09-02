@@ -108,11 +108,11 @@ def _explain_finance(_question: str, result: ToolResultView) -> AnswerDraft:
         answer=answer,
         answer_type="CALCULATION",
         calculation={
-            "toolName": result.tool_name,
-            "availableAsset": data["availableAsset"],
-            "remainingExpense": data["remainingExpense"],
-            "expectedBalance": data["expectedBalance"],
-            "calculatedAt": result.calculated_at,
+            "tool_name": result.tool_name,
+            "available_asset": data["availableAsset"],
+            "remaining_expense": data["remainingExpense"],
+            "expected_balance": data["expectedBalance"],
+            "calculated_at": result.calculated_at,
         },
     )
 
@@ -131,11 +131,11 @@ def _explain_simulation(_question: str, result: ToolResultView) -> AnswerDraft:
         answer=answer,
         answer_type="CALCULATION",
         calculation={
-            "toolName": result.tool_name,
-            "currentExpectedBalance": data["currentExpectedBalance"],
-            "simulatedExpectedBalance": data["simulatedExpectedBalance"],
-            "shortageAmount": data["shortageAmount"],
-            "calculatedAt": result.calculated_at,
+            "tool_name": result.tool_name,
+            "current_expected_balance": data["currentExpectedBalance"],
+            "simulated_expected_balance": data["simulatedExpectedBalance"],
+            "shortage_amount": data["shortageAmount"],
+            "calculated_at": result.calculated_at,
         },
     )
 

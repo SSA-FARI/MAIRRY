@@ -8,15 +8,11 @@ _UUID_PATTERN = re.compile(
     r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-"
     r"[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}\b"
 )
-_AMOUNT_PATTERN = re.compile(r"(?P<number>\d[\d,]*)\s*(?P<unit>억|천만|백만|십만|만)?\s*원")
-_UNIT_MULTIPLIERS = {
-    None: 1,
-    "만": 10_000,
-    "십만": 100_000,
-    "백만": 1_000_000,
-    "천만": 10_000_000,
-    "억": 100_000_000,
-}
+_AMOUNT_PATTERN = re.compile(
+    r"(?P<expression>(?:\d[\d,]*\s*(?:억|만|천|백|십)+\s*)+|\d[\d,]*)\s*원"
+)
+_SMALL_UNIT_MULTIPLIERS = {"": 1, "십": 10, "백": 100, "천": 1_000}
+_SMALL_NUMBER_PATTERN = re.compile(r"(?P<number>\d[\d,]*)\s*(?P<unit>천|백|십)?")
 
 
 @dataclass(frozen=True)
@@ -73,8 +69,31 @@ def _extract_contract_id(message: str) -> str | None:
 
 
 def _parse_amount(match: re.Match[str]) -> int:
-    number = int(match.group("number").replace(",", ""))
-    return number * _UNIT_MULTIPLIERS[match.group("unit")]
+    expression = match.group("expression").replace(" ", "")
+    if expression.count("억") > 1 or expression.count("만") > 1:
+        raise ValueError("duplicate Korean amount unit")
+
+    total = 0
+    if "억" in expression:
+        hundred_millions, expression = expression.split("억", maxsplit=1)
+        total += _parse_small_number(hundred_millions) * 100_000_000
+    if "만" in expression:
+        ten_thousands, expression = expression.split("만", maxsplit=1)
+        total += _parse_small_number(ten_thousands) * 10_000
+    if expression:
+        total += _parse_small_number(expression)
+    return total
+
+
+def _parse_small_number(expression: str) -> int:
+    matches = list(_SMALL_NUMBER_PATTERN.finditer(expression))
+    if not matches or "".join(match.group(0) for match in matches) != expression:
+        raise ValueError("invalid Korean amount")
+    return sum(
+        int(match.group("number").replace(",", ""))
+        * _SMALL_UNIT_MULTIPLIERS[match.group("unit") or ""]
+        for match in matches
+    )
 
 
 def _extract_expense_name(message: str, amount_match: re.Match[str]) -> str:
