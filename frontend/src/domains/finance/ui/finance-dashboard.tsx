@@ -411,6 +411,8 @@ function PaymentCalendar({
           <span className="panel-eyebrow">PAYMENT SCHEDULE</span>
           <h2>지급 일정 캘린더</h2>
         </div>
+      </div>
+      <div className="calendar-controls">
         <div className="calendar-filters">
           {(
             [
@@ -424,8 +426,6 @@ function PaymentCalendar({
             </button>
           ))}
         </div>
-      </div>
-      <div className="calendar-main">
         <div className="calendar-navigation">
           <button
             aria-label="이전 달"
@@ -453,6 +453,8 @@ function PaymentCalendar({
             오늘
           </button>
         </div>
+      </div>
+      <div className="calendar-main">
         <div className="calendar-weekdays" aria-hidden="true">
           {["일", "월", "화", "수", "목", "금", "토"].map((day) => (
             <span key={day}>{day}</span>

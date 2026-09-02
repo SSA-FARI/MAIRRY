@@ -1508,7 +1508,31 @@ a {
 }
 
 .calendar-topline {
+  position: relative;
   align-items: center;
+}
+
+.calendar-controls {
+  position: relative;
+  display: flex;
+  min-height: 54px;
+  align-items: center;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #eceef2;
+}
+
+.calendar-controls .calendar-filters {
+  flex: 0 0 auto;
+}
+
+.calendar-controls .calendar-navigation {
+  position: absolute;
+  left: 50%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  transform: translateX(-50%);
 }
 
 .calendar-main {
@@ -1518,7 +1542,9 @@ a {
 
 .calendar-navigation {
   justify-content: flex-end;
-  margin: -38px 0 15px;
+  margin: 14px 0 12px;
+  padding-top: 12px;
+  border-top: 1px solid #eceef2;
 }
 
 .calendar-navigation .today-button {
@@ -1657,9 +1683,38 @@ a {
     padding: 12px;
   }
 
+  .calendar-topline {
+    display: grid;
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr);
+    justify-content: stretch;
+    justify-items: start;
+  }
+
+  .calendar-controls {
+    display: grid;
+    min-height: 94px;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .calendar-controls .calendar-filters {
+    justify-self: start;
+  }
+
+  .calendar-controls .calendar-navigation {
+    position: static;
+    justify-self: center;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    transform: none;
+  }
+
   .calendar-navigation {
     justify-content: flex-start;
     margin: 12px 0 8px;
+    padding-top: 10px;
   }
 
   .calendar-grid {
