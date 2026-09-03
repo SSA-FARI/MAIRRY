@@ -63,6 +63,7 @@ export function ChatPage() {
     const normalized = question.trim();
     if (!normalized || sending) return;
 
+    controller.current?.abort();
     const userMessage: ChatMessage = { id: nextId.current++, role: "user", text: normalized };
     if (appendUserMessage) setMessages((current) => [...current, userMessage]);
     setInput("");
@@ -181,6 +182,7 @@ export function ChatPage() {
                 placeholder="예: 웨딩홀 잔금일과 남은 금액을 알려줘"
                 onChange={(event) => setInput(event.target.value)}
                 onKeyDown={(event) => {
+                  if (event.nativeEvent.isComposing) return;
                   if (event.key === "Enter" && !event.shiftKey) {
                     event.preventDefault();
                     event.currentTarget.form?.requestSubmit();

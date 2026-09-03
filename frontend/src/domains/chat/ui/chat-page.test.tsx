@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
@@ -115,5 +115,31 @@ describe("ChatPage", () => {
   it("does not allow a blank question", async () => {
     render(<ChatPage />);
     expect(screen.getByRole("button", { name: "질문 보내기" })).toBeDisabled();
+  });
+
+  it("does not submit while a Korean IME composition is active", async () => {
+    let calls = 0;
+    server.use(
+      http.post(chatUrl, () => {
+        calls += 1;
+        return HttpResponse.json({
+          answer: "확인했습니다.",
+          answerType: "NOT_FOUND",
+          citations: [],
+          calculation: null,
+        });
+      }),
+    );
+
+    const user = userEvent.setup();
+    render(<ChatPage />);
+    const input = screen.getByLabelText("AI 플래너에게 질문하기");
+    await user.type(input, "잔금일");
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+    expect(calls).toBe(0);
+    expect(input).toHaveValue("잔금일");
+
+    fireEvent.keyDown(input, { key: "Enter", isComposing: false });
+    await waitFor(() => expect(calls).toBe(1));
   });
 });
