@@ -20,6 +20,12 @@ def test_document_persists_and_reloads_enum_and_jsonb_fields() -> None:
         "warnings": [],
     }
 
+    analysis_error = {
+        "code": "AI_PROVIDER_ERROR",
+        "message": "AI 분석에 실패했습니다.",
+        "details": {},
+    }
+
     session = SessionLocal()
     try:
         session.add(
@@ -33,6 +39,7 @@ def test_document_persists_and_reloads_enum_and_jsonb_fields() -> None:
                 extraction_raw=extraction_raw,
                 analysis_status=DocumentStatus.REVIEW_REQUIRED,
                 analysis_source=AnalysisSource.DEMO_FALLBACK,
+                analysis_error=analysis_error,
             )
         )
         session.commit()
@@ -44,6 +51,7 @@ def test_document_persists_and_reloads_enum_and_jsonb_fields() -> None:
         assert loaded.analysis_status is DocumentStatus.REVIEW_REQUIRED
         assert loaded.analysis_source is AnalysisSource.DEMO_FALLBACK
         assert loaded.extraction_raw == extraction_raw
+        assert loaded.analysis_error == analysis_error
         assert loaded.created_at is not None
         assert loaded.updated_at is not None
     finally:
@@ -76,6 +84,7 @@ def test_document_defaults_status_to_uploaded_and_source_to_live_ai() -> None:
         assert loaded.analysis_status is DocumentStatus.UPLOADED
         assert loaded.analysis_source is AnalysisSource.LIVE_AI
         assert loaded.extraction_raw is None
+        assert loaded.analysis_error is None
     finally:
         session.rollback()
         session.query(Document).filter(Document.id == document_id).delete()

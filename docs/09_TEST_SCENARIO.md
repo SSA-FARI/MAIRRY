@@ -42,6 +42,10 @@
 
 | ID | 대상 | 시나리오 | 기대 결과 |
 |---|---|---|---|
+| AUTH-01 | Demo Login | 본문 없이 로그인 | 설정된 Demo User 공개 프로필 반환 |
+| AUTH-02 | Demo Login | Demo User가 없는 상태에서 연속 요청 | bcrypt 해시를 가진 사용자 한 명만 생성 |
+| AUTH-03 | Demo Login | 동시 로그인 요청 | UNIQUE 충돌 없이 동일 사용자 한 명 반환 |
+| AUTH-04 | Demo Login | 임의 userId를 본문으로 전달 | 전달값을 사용하지 않고 설정된 Demo User 반환 |
 | PLAN-01 | 초기 설정 | 정상 날짜·금액 저장 | 대시보드 이동 및 값 유지 |
 | PLAN-02 | 초기 설정 | 음수 자산 입력 | 저장 차단 및 오류 표시 |
 | DOC-01 | 업로드 | PDF 업로드 | UPLOADED 후 분석 가능 |
@@ -56,6 +60,14 @@
 | REVIEW-04 | 검수 | Payment 금액이 null인 상태로 확정 | 422, 확정 차단 및 금액 입력 안내 |
 | REVIEW-05 | 검수 | Payment가 없는 웨딩홀 계약 확정 | 422, 확정 차단 및 지급항목 추가 안내 |
 | REVIEW-06 | 검수 | FAILED 문서에서 sourceText 없이 직접입력 확정 | sourceText=null로 Contract·Payment 저장 |
+| CONTRACT-01 | 계약 수정 | 업체·총액·지급항목 수정 | 상세와 금융 계산에 변경값 반영 |
+| CONTRACT-02 | 계약 수정 | 필수값 누락 | 422, 기존 계약값 유지 |
+| CONTRACT-03 | 계약 삭제 | 확정 계약 삭제 | 목록·금융 계산에서 제외, 원문 Document 보존 |
+| CONTRACT-04 | 계약 삭제 | AI 추출 문서의 계약 삭제 | Document가 REVIEW_REQUIRED로 전환 |
+| CONTRACT-05 | 계약 삭제 | 직접 입력 문서의 계약 삭제 | Document가 FAILED로 전환 |
+| CONTRACT-06 | 사용자 격리 | 다른 계획의 계약 수정·삭제 | 404, 원본 데이터 유지 |
+| CONTRACT-07 | 지급상태 변경 | 계약 상세에서 미지급 항목을 지급 완료로 변경 | 해당 Payment만 PAID, 금융 남은 지출에서 즉시 제외 |
+| CONTRACT-08 | 지급상태 격리 | 다른 계약의 paymentId로 상태 변경 | 404, 대상 Payment 상태 유지 |
 | FIN-01 | 계산 | 기준 데이터 계산 | 남은 지출 2천만 원, 잔액 1천만 원 |
 | FIN-02 | 계산 | PAID 항목 포함 계약 | PAID 금액은 남은 지출에서 제외 |
 | FIN-03 | 계산 | 추가지출 3백만 원 | 시뮬레이션 잔액 7백만 원 |
@@ -135,6 +147,7 @@ Tool 결과: dueDate=2027-04-30, amount=20000000
 
 - 잘못된 상태의 확정 요청은 409를 반환한다.
 - 다른 사용자 ID의 문서·계약은 조회되지 않는다.
+- 다른 사용자의 계약은 수정·삭제되지 않는다.
 - API 오류는 공통 error 형식을 따른다.
 - 서버 로그에 계약 원문과 비밀키가 출력되지 않는다.
 - 객체 스토리지 파일은 공개 접근되지 않는다.

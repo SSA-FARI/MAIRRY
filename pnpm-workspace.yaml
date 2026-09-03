@@ -2,7 +2,9 @@ packages:
   - frontend
 
 onlyBuiltDependencies:
+  - msw
   - sharp
 allowBuilds:
+  msw: true
   sharp: true
   unrs-resolver: true

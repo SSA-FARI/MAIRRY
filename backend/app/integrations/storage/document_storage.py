@@ -53,3 +53,14 @@ class MinioDocumentStorage:
                 status_code=502,
             ) from exc
         return storage_key
+
+    def read(self, storage_key: str) -> bytes:
+        try:
+            response = self._client.get_object(Bucket=self._bucket, Key=storage_key)
+            return response["Body"].read()
+        except (BotoCoreError, ClientError) as exc:
+            raise AppError(
+                code=ErrorCode.STORAGE_ERROR,
+                message="파일을 불러오지 못했습니다.",
+                status_code=502,
+            ) from exc

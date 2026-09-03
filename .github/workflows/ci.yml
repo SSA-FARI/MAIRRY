@@ -87,6 +87,10 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgresql+psycopg://mairry:mairry@localhost:5432/mairry_test
+      DEMO_USER_ID: 00000000-0000-0000-0000-000000000001
+      DEMO_USER_LOGIN_ID: demo
+      DEMO_USER_DISPLAY_NAME: Demo User
+      DEMO_USER_EMAIL: ""
       OBJECT_STORAGE_ENDPOINT: http://localhost:9000
       OBJECT_STORAGE_BUCKET: mairry
       OBJECT_STORAGE_ACCESS_KEY: minio
@@ -126,6 +130,11 @@ jobs:
     name: Contracts
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      DEMO_USER_ID: 00000000-0000-0000-0000-000000000001
+      DEMO_USER_LOGIN_ID: demo
+      DEMO_USER_DISPLAY_NAME: Demo User
+      DEMO_USER_EMAIL: ""
     steps:
       - name: Checkout
         uses: actions/checkout@v4

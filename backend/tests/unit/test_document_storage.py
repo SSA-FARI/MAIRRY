@@ -1,4 +1,5 @@
 import uuid
+from io import BytesIO
 from unittest.mock import Mock
 
 import pytest
@@ -56,3 +57,30 @@ def test_save_wraps_client_error_as_storage_error_without_leaking_key() -> None:
 
 def test_build_client_is_cached_so_requests_share_one_connection_pool() -> None:
     assert _build_client() is _build_client()
+
+
+def test_read_returns_object_body_bytes() -> None:
+    client = Mock()
+    client.get_object.return_value = {"Body": BytesIO(b"%PDF-1.4")}
+    storage = MinioDocumentStorage(client=client, bucket="mairry")
+
+    result = storage.read("abc.pdf")
+
+    assert result == b"%PDF-1.4"
+    client.get_object.assert_called_once_with(Bucket="mairry", Key="abc.pdf")
+
+
+def test_read_wraps_client_error_as_storage_error_without_leaking_key() -> None:
+    client = Mock()
+    client.get_object.side_effect = ClientError(
+        {"Error": {"Code": "404", "Message": "boom"}}, "GetObject"
+    )
+    storage = MinioDocumentStorage(client=client, bucket="mairry")
+
+    with pytest.raises(AppError) as excinfo:
+        storage.read("secret-key.pdf")
+
+    assert excinfo.value.status_code == 502
+    assert excinfo.value.code.value == "STORAGE_ERROR"
+    assert "secret-key" not in excinfo.value.message
+    assert "secret-key" not in str(excinfo.value.details)

@@ -52,6 +52,7 @@ MAIRRY MVP REST API의 동작, 검증, 상태 전이를 정의한다. 기계 판
 | Method | Path | 성공 | 설명 |
 |---|---|---:|---|
 | GET | `/health` | 200 | 상태 확인 |
+| POST | `/v1/auth/demo-login` | 200 | 설정된 단일 Demo User 조회·초기화 |
 | GET | `/wedding-plan` | 200 | 계획 조회 |
 | PUT | `/wedding-plan` | 200 | 계획 생성/수정 |
 | POST | `/documents` | 201 | 문서 업로드 |
@@ -60,6 +61,9 @@ MAIRRY MVP REST API의 동작, 검증, 상태 전이를 정의한다. 기계 판
 | PUT | `/documents/{documentId}/confirm` | 200 | 계약 확정 |
 | GET | `/contracts` | 200 | 계약 목록 |
 | GET | `/contracts/{contractId}` | 200 | 계약 상세 |
+| PUT | `/contracts/{contractId}` | 200 | 확정 계약 수정 |
+| DELETE | `/contracts/{contractId}` | 204 | 확정 계약 삭제 및 문서 재검수 전환 |
+| PATCH | `/contracts/{contractId}/payments/{paymentId}` | 200 | 지급항목 상태 간편 변경 |
 | GET | `/finance/summary` | 200 | 금융 요약/타임라인 |
 | POST | `/finance/simulate` | 200 | 저장 없는 시뮬레이션 |
 | POST | `/chat` | 200 | 근거 기반 답변 |
@@ -69,6 +73,38 @@ MAIRRY MVP REST API의 동작, 검증, 상태 전이를 정의한다. 기계 판
 ### GET /api/health
 
 응답 200: `{"status": "ok"}`
+
+## Demo Login
+
+### POST /api/v1/auth/demo-login
+
+JWT, Cookie, Session 없이 서버 설정의 단일 `DEMO_USER_ID`만 조회하는 공개 MVP 시연용 API다.
+실제 보안 인증이나 일반 사용자 로그인으로 사용하지 않는다. 요청 본문, Query, Header에서 사용자
+ID나 로그인 정보를 받지 않는다.
+
+Demo User가 없으면 `DEMO_USER_ID`, `DEMO_USER_LOGIN_ID`, `DEMO_USER_DISPLAY_NAME`,
+`DEMO_USER_EMAIL` 설정으로 한 번만 생성한다. `password_hash`에는 요청 시 생성하고 즉시 폐기한 임의
+비밀번호의 bcrypt 해시만 저장한다. 이미 존재하는 사용자의 프로필과 해시는 덮어쓰지 않는다.
+
+요청 본문: 없음.
+
+응답 200:
+
+```json
+{
+  "user": {
+    "id": "00000000-0000-0000-0000-000000000001",
+    "loginId": "demo",
+    "displayName": "Demo User",
+    "email": null
+  },
+  "mode": "DEMO"
+}
+```
+
+응답에는 `passwordHash`, 환경변수 이름·설정 원문, JWT, Refresh Token을 포함하지 않는다.
+Demo 설정이 누락되거나 잘못된 경우 애플리케이션 시작을 거부한다. 설정과 DB UNIQUE 데이터가
+충돌하거나 저장에 실패하면 민감한 설정값을 노출하지 않는 공통 500 오류를 반환한다.
 
 ## Wedding Plan
 
@@ -80,7 +116,13 @@ MAIRRY MVP REST API의 동작, 검증, 상태 전이를 정의한다. 기계 판
 {"weddingDate": "2027-05-15", "availableAsset": 30000000}
 ```
 
-`weddingDate`는 유효한 날짜, `availableAsset`은 0 이상의 정수다.
+`weddingDate`는 유효한 날짜, `availableAsset`은 0 이상 9,223,372,036,854,775,807 이하의
+원 단위 int64(BIGINT) 정수
+(`0`~`9,223,372,036,854,775,807`)다.
+
+WeddingPlan의 `availableAsset`은 초기 설정에서 입력한 대표 공동 현금 자산 한 건을 의미한다.
+PERSONAL 자산과 별도로 추가한 JOINT 자산은 이 값에 합산하지 않으며 Finance Summary의
+`availableAsset`에서 전체 자산 합계로 제공한다.
 
 응답 200:
 
@@ -150,6 +192,11 @@ UPLOADED 또는 FAILED 문서를 PROCESSING으로 바꾸고 분석을 시작한�
 | FAILED | null 또는 시도 source | null | ErrorBody |
 | CONFIRMED | LIVE_AI/DEMO_FALLBACK | object | null |
 
+FAILED의 `error.code`는 `AI_PROVIDER_ERROR`(Provider 오류·유효하지 않은 응답), `STORAGE_ERROR`(원본 파일
+조회 실패), `INTERNAL_ERROR`(그 외 예상치 못한 오류) 중 하나이며, `message`는 항상 사용자에게 노출
+가능한 일반 문구다(원인 상세는 서버 로그에만 남는다). 재시도(`POST /analyze`)를 호출하면 이전
+`error`는 초기화된다.
+
 분석 성공 응답 200:
 
 ```json
@@ -191,6 +238,7 @@ UPLOADED 또는 FAILED 문서를 PROCESSING으로 바꾸고 분석을 시작한�
   "company": "A웨딩홀",
   "totalPrice": 23000000,
   "payments": [{
+    "id": "40af8db0-a099-40a0-bb92-720ec331a6a0",
     "name": "잔금",
     "amount": 20000000,
     "dueDate": "2027-04-30",
@@ -274,6 +322,39 @@ AI 추출 결과에서는 payment.amount가 null일 수 있지만 확정 요청�
 
 오류: 404.
 
+Contract 상세 응답의 Payment에는 상태 변경 대상을 안정적으로 식별하기 위한 `id`가 포함된다.
+
+### PUT /api/contracts/{contractId}
+
+확정 계약의 검수값을 수정한다. 요청 형식과 검증 규칙은
+`PUT /api/documents/{documentId}/confirm`의 ContractConfirm과 같다. Contract 기본값과
+Payment·CancellationTerm 전체를 한 트랜잭션으로 교체하며 성공 응답은 수정된 Contract 상세다.
+변경된 UNPAID 지급항목은 이후 금융 요약·타임라인·Chat Tool 결과에 즉시 반영한다.
+
+오류: 현재 WeddingPlan의 확정 계약이 아니면 404, 필수값 또는 구조 오류는 422.
+
+### DELETE /api/contracts/{contractId}
+
+현재 WeddingPlan의 확정 Contract와 하위 Payment·CancellationTerm을 삭제한다. 원본 Document와
+저장 파일은 삭제하지 않는다. Document에 추출 결과가 남아 있으면 REVIEW_REQUIRED, 없으면
+FAILED로 전환하여 다시 검수·확정할 수 있게 한다. 성공은 본문 없는 204다.
+
+오류: 현재 WeddingPlan의 확정 계약이 아니면 404.
+
+### PATCH /api/contracts/{contractId}/payments/{paymentId}
+
+확정 계약 상세에서 지급항목의 상태만 빠르게 변경한다.
+
+요청:
+
+```json
+{"status": "PAID"}
+```
+
+`status`는 `PAID`, `UNPAID`, `UNKNOWN` 중 하나다. 성공 응답 200은 변경된 Contract 상세 형식이며,
+변경 결과는 금융 요약·타임라인·Chat Tool 조회에 즉시 반영된다. Contract와 Payment가 현재
+WeddingPlan에 함께 속하지 않으면 존재 여부를 노출하지 않고 404를 반환한다.
+
 ## Finance
 
 ### GET /api/finance/summary
@@ -298,6 +379,7 @@ amount null 항목은 제외한다.
 ```
 
 - `remainingExpense = SUM(payment.amount)`
+- `availableAsset = SUM(asset.amount)`이며 현재 WeddingPlan의 모든 자산을 포함
 - `expectedBalance = availableAsset - remainingExpense`
 - 대상이 없으면 합계 0, nearestPayment null, timeline 빈 배열
 - WeddingPlan이 없으면 404

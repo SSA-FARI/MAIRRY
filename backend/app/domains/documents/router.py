@@ -1,9 +1,24 @@
-from fastapi import APIRouter, Depends, UploadFile, status
+from typing import Annotated
+from uuid import UUID
+
+from fastapi import APIRouter, BackgroundTasks, Depends, UploadFile, status
 from sqlalchemy.orm import Session
 
+from app.core.config import Settings, get_settings
 from app.core.database import get_db
-from app.domains.documents.schemas import DocumentUploadResponse
-from app.domains.documents.service import DocumentUploadService, get_document_upload_service
+from app.core.errors import ErrorResponse
+from app.domains.contracts.schemas import ContractConfirm, ContractDetailRead
+from app.domains.contracts.service import ContractConfirmationService
+from app.domains.documents.schemas import DocumentDetailResponse, DocumentUploadResponse
+from app.domains.documents.service import (
+    DocumentAnalysisService,
+    DocumentQueryService,
+    DocumentUploadService,
+    build_document_detail_response,
+    get_document_analysis_service,
+    get_document_query_service,
+    get_document_upload_service,
+)
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -22,11 +37,45 @@ async def upload_document(
     )
 
 
-@router.post("/{document_id}/analyze", status_code=status.HTTP_202_ACCEPTED)
-def analyze_document(document_id: str) -> dict[str, str]:
-    return {"documentId": document_id, "status": "PROCESSING"}
+@router.get("/{document_id}", response_model=DocumentDetailResponse)
+def get_document(
+    document_id: UUID,
+    db: Session = Depends(get_db),
+    service: DocumentQueryService = Depends(get_document_query_service),
+) -> DocumentDetailResponse:
+    document = service.get(db, document_id)
+    return build_document_detail_response(document)
 
 
-@router.put("/{document_id}/confirm")
-def confirm_document(document_id: str) -> dict[str, str]:
-    return {"documentId": document_id, "status": "CONFIRMED"}
+@router.post(
+    "/{document_id}/analyze",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=DocumentDetailResponse,
+)
+def analyze_document(
+    document_id: UUID,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    service: DocumentAnalysisService = Depends(get_document_analysis_service),
+) -> DocumentDetailResponse:
+    document = service.start(db, document_id)
+    background_tasks.add_task(service.process, document_id)
+    return build_document_detail_response(document)
+
+
+@router.put(
+    "/{document_id}/confirm",
+    response_model=ContractDetailRead,
+    responses={
+        404: {"model": ErrorResponse, "description": "Document or wedding plan not found"},
+        409: {"model": ErrorResponse, "description": "Invalid document state"},
+        422: {"model": ErrorResponse, "description": "Invalid confirmation data"},
+    },
+)
+def confirm_document(
+    document_id: UUID,
+    payload: ContractConfirm,
+    db: Annotated[Session, Depends(get_db)],
+    configuration: Annotated[Settings, Depends(get_settings)],
+) -> ContractDetailRead:
+    return ContractConfirmationService(db, configuration).confirm(document_id, payload)

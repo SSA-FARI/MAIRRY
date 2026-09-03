@@ -29,6 +29,26 @@ class PaymentStatus(StrEnum):
     UNKNOWN = "UNKNOWN"
 
 
+class WeddingPlanStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    COMPLETED = "COMPLETED"
+
+
+class WeddingPlanMemberRole(StrEnum):
+    OWNER = "OWNER"
+    PARTNER = "PARTNER"
+
+
+class AssetOwnerType(StrEnum):
+    PERSONAL = "PERSONAL"
+    JOINT = "JOINT"
+
+
+class AssetCategory(StrEnum):
+    CASH = "CASH"
+    SAVINGS = "SAVINGS"
+
+
 class AnswerType(StrEnum):
     CONTRACT = "CONTRACT"
     CALCULATION = "CALCULATION"

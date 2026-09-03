@@ -421,6 +421,7 @@ FAILED 문서에서 사용자가 직접 입력한 조건은 AI 근거가 없으�
 | `file_url` | TEXT | X | - | Object Storage 경로 |
 | `content_type` | VARCHAR(100) | O | - | MIME Type |
 | `extraction_raw` | JSONB | O | - | AI 최초 분석 결과 |
+| `analysis_error` | JSONB | O | - | FAILED 사유(ErrorBody: code/message/details) |
 | `analysis_status` | ENUM | X | DEFAULT UPLOADED | AI 분석 상태 |
 | `analysis_source` | ENUM | X | DEFAULT LIVE_AI | LIVE_AI / DEMO_FALLBACK |
 | `created_at` | TIMESTAMPTZ | X | DEFAULT now() | 업로드일 |
@@ -445,6 +446,8 @@ PROCESSING
    ↓
 FAILED
 ```
+
+재시도(FAILED → PROCESSING)는 이전 실패 사유(`analysis_error`)를 초기화하고 다시 시작한다.
 
 ### 특징
 
