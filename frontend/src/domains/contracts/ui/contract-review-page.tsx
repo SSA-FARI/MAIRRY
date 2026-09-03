@@ -138,7 +138,9 @@ function ContractFormPage({ documentId, contractId }: ContractFormPageProps) {
     setIsRetryingAnalysis(true);
     setRetryErrorMessage("");
     try {
-      await analyzeDocument(documentId);
+      const restarted = await analyzeDocument(documentId);
+      setDocument(restarted);
+      setPageState("analyzing");
       setReloadKey((key) => key + 1);
     } catch (error) {
       setRetryErrorMessage(
