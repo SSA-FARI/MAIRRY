@@ -112,6 +112,9 @@ def _add_contract(
         content_type="application/pdf",
         analysis_status=DocumentStatus.CONFIRMED,
     )
+    session.add(document)
+    session.flush()
+
     contract = Contract(
         id=uuid.uuid4(),
         wedding_plan_id=plan_id,
@@ -122,7 +125,7 @@ def _add_contract(
         status=ContractStatus.CONFIRMED,
         confirmed_by_member_id=member_id,
     )
-    session.add_all([document, contract])
+    session.add(contract)
     session.flush()
     session.add_all(
         [
