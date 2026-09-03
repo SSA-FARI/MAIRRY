@@ -192,6 +192,11 @@ UPLOADED 또는 FAILED 문서를 PROCESSING으로 바꾸고 분석을 시작한�
 | FAILED | null 또는 시도 source | null | ErrorBody |
 | CONFIRMED | LIVE_AI/DEMO_FALLBACK | object | null |
 
+FAILED의 `error.code`는 `AI_PROVIDER_ERROR`(Provider 오류·유효하지 않은 응답), `STORAGE_ERROR`(원본 파일
+조회 실패), `INTERNAL_ERROR`(그 외 예상치 못한 오류) 중 하나이며, `message`는 항상 사용자에게 노출
+가능한 일반 문구다(원인 상세는 서버 로그에만 남는다). 재시도(`POST /analyze`)를 호출하면 이전
+`error`는 초기화된다.
+
 분석 성공 응답 200:
 
 ```json

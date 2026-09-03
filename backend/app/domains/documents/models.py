@@ -32,6 +32,7 @@ class Document(Base):
     file_url: Mapped[str] = mapped_column(Text, nullable=False)
     content_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     extraction_raw: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    analysis_error: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     analysis_status: Mapped[DocumentStatus] = mapped_column(
         Enum(
             DocumentStatus,

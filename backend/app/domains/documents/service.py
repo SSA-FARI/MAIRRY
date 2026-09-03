@@ -8,13 +8,14 @@ import anyio.to_thread
 from fastapi import UploadFile, status
 from sqlalchemy.orm import Session
 
+from ai.common.exceptions import AiOutputError, AiProviderError
 from ai.document_extraction.schemas import DocumentAnalysisResult
 from app.application.document_analysis import run_document_analysis
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.core.enums import AnalysisSource, DocumentStatus
 from app.core.error_codes import ErrorCode
-from app.core.errors import AppError
+from app.core.errors import AppError, ErrorBody
 from app.domains.documents.models import Document
 from app.domains.documents.repository import DocumentRepository
 from app.domains.documents.schemas import DocumentDetailResponse, DocumentExtractionResponse
@@ -31,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 _SOURCE_VISIBLE_STATUSES = frozenset({DocumentStatus.REVIEW_REQUIRED, DocumentStatus.CONFIRMED})
 _EXTRACTION_VISIBLE_STATUSES = frozenset({DocumentStatus.REVIEW_REQUIRED, DocumentStatus.CONFIRMED})
+_ERROR_VISIBLE_STATUSES = frozenset({DocumentStatus.FAILED})
 
 
 class DocumentUploadService:
@@ -117,6 +119,7 @@ class DocumentAnalysisService:
             )
         ensure_transition_allowed(document.analysis_status, DocumentStatus.PROCESSING)
         document.analysis_status = DocumentStatus.PROCESSING
+        document.analysis_error = None
         db.commit()
         db.refresh(document)
         return document
@@ -133,14 +136,31 @@ class DocumentAnalysisService:
 
             try:
                 await self._run_analysis(db, document)
-            except Exception:
+            except Exception as exc:
+                error = self._build_failure_error(exc)
                 logger.exception(
-                    "Document analysis failed unexpectedly: documentId=%s", document_id
+                    "Document analysis failed: documentId=%s errorCode=%s",
+                    document_id,
+                    error.code,
                 )
                 await anyio.to_thread.run_sync(db.rollback)
-                await anyio.to_thread.run_sync(self._mark_failed, db, document_id)
+                await anyio.to_thread.run_sync(self._mark_failed, document_id, error)
         finally:
             await anyio.to_thread.run_sync(db.close)
+
+    @staticmethod
+    def _build_failure_error(exc: Exception) -> ErrorBody:
+        """Maps an analysis failure to a user-facing ErrorBody. Never echoes exception
+        internals (message text stays generic; details are intentionally empty) so stack
+        traces or provider payloads cannot leak through the API."""
+        if isinstance(exc, AppError):
+            return ErrorBody(code=exc.code, message=exc.message)
+        if isinstance(exc, AiProviderError | AiOutputError):
+            return ErrorBody(
+                code=ErrorCode.AI_PROVIDER_ERROR,
+                message="AI 분석에 실패했습니다. 다시 시도해 주세요.",
+            )
+        return ErrorBody(code=ErrorCode.INTERNAL_ERROR, message="일시적인 오류가 발생했습니다.")
 
     async def _run_analysis(self, db: Session, document: Document) -> None:
         """Any failure here (storage, disk, AI, parsing) is caught by process() as FAILED."""
@@ -170,14 +190,21 @@ class DocumentAnalysisService:
         db.commit()
 
     @staticmethod
-    def _mark_failed(db: Session, document_id: uuid.UUID) -> None:
-        """Updates by id instead of mutating the loaded ORM instance: this runs right after
-        db.rollback(), which expires every object still attached to the session, so writing
-        through a fresh identity-based query avoids relying on that stale attribute state."""
-        db.query(Document).filter(Document.id == document_id).update(
-            {"analysis_status": DocumentStatus.FAILED}
-        )
-        db.commit()
+    def _mark_failed(document_id: uuid.UUID, error: ErrorBody) -> None:
+        """Opens its own session instead of reusing process()'s session: if the failure that
+        triggered this call was itself a broken DB connection, the just-rolled-back session
+        may still be unusable, and recording FAILED must not depend on it recovering."""
+        db = SessionLocal()
+        try:
+            db.query(Document).filter(Document.id == document_id).update(
+                {
+                    "analysis_status": DocumentStatus.FAILED,
+                    "analysis_error": error.model_dump(mode="json"),
+                }
+            )
+            db.commit()
+        finally:
+            db.close()
 
 
 def get_document_analysis_service() -> DocumentAnalysisService:
@@ -195,11 +222,14 @@ def build_document_detail_response(document: Document) -> DocumentDetailResponse
     analysis_source = (
         document.analysis_source if document_status in _SOURCE_VISIBLE_STATUSES else None
     )
+    error = None
+    if document_status in _ERROR_VISIBLE_STATUSES and document.analysis_error is not None:
+        error = ErrorBody.model_validate(document.analysis_error)
     return DocumentDetailResponse(
         id=document.id,
         original_name=document.original_filename,
         status=document_status,
         analysis_source=analysis_source,
         extraction=extraction,
-        error=None,
+        error=error,
     )
