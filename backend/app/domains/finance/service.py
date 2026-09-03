@@ -1,6 +1,7 @@
 from collections.abc import Iterable
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from uuid import UUID
 
 from fastapi import status
 from sqlalchemy.exc import SQLAlchemyError
@@ -79,9 +80,9 @@ class FinanceService:
         self._configuration = configuration
         self._today = today or datetime.now(UTC).date()
 
-    def get_summary(self) -> FinanceSummary:
+    def get_summary(self, *, user_id: UUID | None = None) -> FinanceSummary:
         try:
-            plan = self._plans.get_current_for_user(self._configuration.demo_user_id)
+            plan = self._plans.get_current_for_user(user_id or self._configuration.demo_user_id)
             if plan is None:
                 raise AppError(
                     code=ErrorCode.RESOURCE_NOT_FOUND,
@@ -100,8 +101,16 @@ class FinanceService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             ) from exc
 
-    def simulate(self, additional_amount: int) -> SimulationResult:
-        return simulate_additional_expense(self.get_summary(), additional_amount)
+    def simulate(
+        self,
+        additional_amount: int,
+        *,
+        user_id: UUID | None = None,
+    ) -> SimulationResult:
+        return simulate_additional_expense(
+            self.get_summary(user_id=user_id),
+            additional_amount,
+        )
 
     def _build_summary(
         self,
