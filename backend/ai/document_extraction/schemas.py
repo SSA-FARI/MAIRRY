@@ -8,8 +8,8 @@ from ai.common.schema import AiContractModel
 
 class ExtractedPayment(AiContractModel):
     name: str
-    amount: int | None = Field(default=None, ge=0)
-    due_date: date | None = None
+    amount: int | None = Field(ge=0)
+    due_date: date | None
     status: Literal["PAID", "UNPAID", "UNKNOWN"]
     source_text: str
 
@@ -22,7 +22,7 @@ class CancellationTerm(AiContractModel):
 class DocumentExtraction(AiContractModel):
     document_type: Literal["WEDDING_HALL", "UNKNOWN"]
     company: str | None
-    total_price: int | None = Field(default=None, ge=0)
+    total_price: int | None = Field(ge=0)
     payments: list[ExtractedPayment]
     cancellation_terms: list[CancellationTerm]
     warnings: list[str]
