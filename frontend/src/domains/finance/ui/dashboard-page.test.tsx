@@ -53,6 +53,7 @@ describe("DashboardPage", () => {
       "href",
       "/documents/upload",
     );
+    expect(screen.getByRole("link", { name: "AI 질문" })).toHaveAttribute("href", "/chat");
     expect(await screen.findByText("5월 15일 결혼식", { exact: false })).toBeInTheDocument();
     expect(screen.getByText("35,000,000원")).toBeInTheDocument();
     expect(screen.getAllByText("20,000,000원").length).toBeGreaterThan(0);
