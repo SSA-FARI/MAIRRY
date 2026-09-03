@@ -9,13 +9,19 @@ from app.core.database import get_db
 from app.core.errors import ErrorResponse
 from app.domains.contracts.schemas import ContractConfirm, ContractDetailRead
 from app.domains.contracts.service import ContractConfirmationService
-from app.domains.documents.schemas import DocumentDetailResponse, DocumentUploadResponse
+from app.domains.documents.schemas import (
+    DocumentDetailResponse,
+    DocumentPreviewUrlResponse,
+    DocumentUploadResponse,
+)
 from app.domains.documents.service import (
     DocumentAnalysisService,
+    DocumentPreviewService,
     DocumentQueryService,
     DocumentUploadService,
     build_document_detail_response,
     get_document_analysis_service,
+    get_document_preview_service,
     get_document_query_service,
     get_document_upload_service,
 )
@@ -61,6 +67,15 @@ def analyze_document(
     document = service.start(db, document_id)
     background_tasks.add_task(service.process, document_id)
     return build_document_detail_response(document)
+
+
+@router.get("/{document_id}/preview-url", response_model=DocumentPreviewUrlResponse)
+def get_document_preview_url(
+    document_id: UUID,
+    db: Session = Depends(get_db),
+    service: DocumentPreviewService = Depends(get_document_preview_service),
+) -> DocumentPreviewUrlResponse:
+    return service.build_preview_url(db, document_id)
 
 
 @router.put(

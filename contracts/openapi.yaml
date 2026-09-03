@@ -70,6 +70,15 @@ paths:
         "404": {$ref: "#/components/responses/NotFound"}
         "409": {$ref: "#/components/responses/Conflict"}
         "502": {$ref: "#/components/responses/ExternalAiError"}
+  /documents/{documentId}/preview-url:
+    parameters: [{$ref: "#/components/parameters/DocumentId"}]
+    get:
+      operationId: getDocumentPreviewUrl
+      summary: Issue a short-lived signed URL for the private original file
+      responses:
+        "200": {description: Signed preview URL, content: {application/json: {schema: {$ref: "#/components/schemas/DocumentPreviewUrl"}}}}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "502": {$ref: "#/components/responses/StorageUnavailable"}
   /documents/{documentId}/confirm:
     parameters: [{$ref: "#/components/parameters/DocumentId"}]
     put:
@@ -166,6 +175,7 @@ components:
     UnsupportedMediaType: {description: Unsupported file type, content: {application/json: {schema: {$ref: "#/components/schemas/ErrorResponse"}}}}
     UnprocessableEntity: {description: Invalid extraction data, content: {application/json: {schema: {$ref: "#/components/schemas/ErrorResponse"}}}}
     ExternalAiError: {description: AI failed and fallback unavailable, content: {application/json: {schema: {$ref: "#/components/schemas/ErrorResponse"}}}}
+    StorageUnavailable: {description: Object storage unreachable or failed, content: {application/json: {schema: {$ref: "#/components/schemas/ErrorResponse"}}}}
     InternalServerError: {description: Invalid demo configuration or internal persistence failure, content: {application/json: {schema: {$ref: "#/components/schemas/ErrorResponse"}}}}
   schemas:
     Health:
@@ -233,6 +243,13 @@ components:
         analysisSource: {type: [string, "null"], enum: [LIVE_AI, DEMO_FALLBACK, null]}
         extraction: {oneOf: [{$ref: "#/components/schemas/DocumentExtraction"}, {type: "null"}]}
         error: {oneOf: [{$ref: "#/components/schemas/ErrorBody"}, {type: "null"}]}
+      additionalProperties: false
+    DocumentPreviewUrl:
+      type: object
+      required: [url, expiresAt]
+      properties:
+        url: {type: string, format: uri}
+        expiresAt: {type: string, format: date-time}
       additionalProperties: false
     DocumentType: {type: string, enum: [WEDDING_HALL, UNKNOWN]}
     PaymentStatus: {type: string, enum: [PAID, UNPAID, UNKNOWN]}

@@ -58,6 +58,7 @@ MAIRRY MVP REST API의 동작, 검증, 상태 전이를 정의한다. 기계 판
 | POST | `/documents` | 201 | 문서 업로드 |
 | GET | `/documents/{documentId}` | 200 | 문서/분석 상태 조회 |
 | POST | `/documents/{documentId}/analyze` | 202 | 분석 시작/재시도 |
+| GET | `/documents/{documentId}/preview-url` | 200 | 원문 미리보기 서명 URL 발급 |
 | PUT | `/documents/{documentId}/confirm` | 200 | 계약 확정 |
 | GET | `/contracts` | 200 | 계약 목록 |
 | GET | `/contracts/{contractId}` | 200 | 계약 상세 |
@@ -224,6 +225,27 @@ FAILED의 `error.code`는 `AI_PROVIDER_ERROR`(Provider 오류·유효하지 않�
 ```
 
 오류: 404.
+
+### GET /api/documents/{documentId}/preview-url
+
+비공개 객체 스토리지에 저장된 원본 파일을 프론트엔드가 직접 열람할 수 있도록, 짧게 만료되는
+서명 URL(presigned URL)을 발급한다. 현재 사용자(WeddingPlan)가 소유한 문서인지 먼저 확인한
+뒤에만 발급하며, 다른 사용자의 문서는 존재 여부를 노출하지 않고 404를 반환한다. 문서 상태와
+무관하게(원본 파일이 저장된 UPLOADED 이후 모든 상태에서) 발급할 수 있다.
+
+응답 200:
+
+```json
+{
+  "url": "https://storage.example/mairry/8f32eb5e-....pdf?X-Amz-Signature=...",
+  "expiresAt": "2026-09-03T12:05:00+09:00"
+}
+```
+
+`expiresAt`은 서버가 서명에 사용한 만료 시각과 동일하며, 지난 뒤에는 `url`로 접근할 수 없다.
+매 호출마다 새 서명 URL을 발급하므로 Frontend는 응답을 캐시하지 않고 사용 직전에 호출한다.
+
+오류: 문서 없음(다른 사용자 포함) 404, 원본 파일 조회/서명 실패 502(`STORAGE_ERROR`).
 
 ### PUT /api/documents/{documentId}/confirm
 

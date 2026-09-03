@@ -18,7 +18,11 @@ from app.core.error_codes import ErrorCode
 from app.core.errors import AppError, ErrorBody
 from app.domains.documents.models import Document
 from app.domains.documents.repository import DocumentRepository
-from app.domains.documents.schemas import DocumentDetailResponse, DocumentExtractionResponse
+from app.domains.documents.schemas import (
+    DocumentDetailResponse,
+    DocumentExtractionResponse,
+    DocumentPreviewUrlResponse,
+)
 from app.domains.documents.storage import DocumentStoragePort
 from app.domains.documents.transitions import ensure_transition_allowed
 from app.domains.documents.validation import (
@@ -88,6 +92,27 @@ class DocumentQueryService:
 
 def get_document_query_service() -> DocumentQueryService:
     return DocumentQueryService(repository=DocumentRepository())
+
+
+class DocumentPreviewService:
+    def __init__(self, query_service: DocumentQueryService, storage: DocumentStoragePort) -> None:
+        self._query_service = query_service
+        self._storage = storage
+
+    def build_preview_url(self, db: Session, document_id: uuid.UUID) -> DocumentPreviewUrlResponse:
+        """Confirms the document belongs to the current wedding plan (via DocumentQueryService's
+        404-on-mismatch scoping) before signing a URL, so no other user's private object can be
+        previewed even if its id is guessed."""
+        document = self._query_service.get(db, document_id)
+        url, expires_at = self._storage.build_preview_url(document.file_url)
+        return DocumentPreviewUrlResponse(url=url, expires_at=expires_at)
+
+
+def get_document_preview_service() -> DocumentPreviewService:
+    return DocumentPreviewService(
+        query_service=DocumentQueryService(repository=DocumentRepository()),
+        storage=MinioDocumentStorage(),
+    )
 
 
 class DocumentAnalysisService:
