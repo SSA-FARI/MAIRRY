@@ -168,4 +168,97 @@ describe("DashboardPage", () => {
     expect(oldestDate).toHaveAttribute("aria-selected", "true");
     expect(screen.getAllByText("가장 오래된 업체").length).toBeGreaterThan(0);
   });
+
+  it("renders the contract-defined empty finance state", async () => {
+    server.use(
+      http.get(`${baseUrl}/wedding-plan`, () => HttpResponse.json(plan)),
+      http.get(`${baseUrl}/finance/summary`, () =>
+        HttpResponse.json({
+          availableAsset: 50_000_000,
+          remainingExpense: 0,
+          expectedBalance: 50_000_000,
+          nearestPayment: null,
+          timeline: [],
+        }),
+      ),
+    );
+
+    render(<DashboardPage />);
+
+    expect((await screen.findAllByText("50,000,000원")).length).toBeGreaterThan(0);
+    expect(screen.getByText("예정된 지급이 없습니다.")).toBeInTheDocument();
+    expect(document.body).toHaveTextContent("아직 확정된 지급 일정이 없어요.");
+  });
+
+  it("shows a negative balance and shortage without hiding its sign", async () => {
+    server.use(
+      http.get(`${baseUrl}/wedding-plan`, () => HttpResponse.json(plan)),
+      http.get(`${baseUrl}/finance/summary`, () =>
+        HttpResponse.json({
+          ...summary,
+          availableAsset: 20_000_000,
+          remainingExpense: 28_000_000,
+          expectedBalance: -8_000_000,
+        }),
+      ),
+    );
+
+    render(<DashboardPage />);
+
+    expect((await screen.findAllByText("-8,000,000원")).length).toBeGreaterThan(0);
+    expect(screen.getByText("⚠ 예산 조정 필요")).toBeInTheDocument();
+    expect(screen.getByText("8,000,000원 부족 예상")).toBeInTheDocument();
+  });
+
+  it("retries a failed finance request and renders the fresh backend response", async () => {
+    let financeCalls = 0;
+    server.use(
+      http.get(`${baseUrl}/wedding-plan`, () => HttpResponse.json(plan)),
+      http.get(`${baseUrl}/finance/summary`, () => {
+        financeCalls += 1;
+        return financeCalls === 1
+          ? HttpResponse.json(
+              { error: { code: "INTERNAL_ERROR", message: "금융 조회 실패", details: {} } },
+              { status: 500 },
+            )
+          : HttpResponse.json(summary);
+      }),
+    );
+    const user = userEvent.setup();
+
+    render(<DashboardPage />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("금융 조회 실패");
+    await user.click(screen.getByRole("button", { name: "다시 시도" }));
+
+    expect(await screen.findByText("35,000,000원")).toBeInTheDocument();
+    expect(financeCalls).toBe(2);
+  });
+
+  it("clears an old simulation result when the input changes", async () => {
+    server.use(
+      http.get(`${baseUrl}/wedding-plan`, () => HttpResponse.json(plan)),
+      http.get(`${baseUrl}/finance/summary`, () => HttpResponse.json(summary)),
+      http.post(`${baseUrl}/finance/simulate`, () =>
+        HttpResponse.json({
+          currentExpectedBalance: 15_000_000,
+          simulatedExpectedBalance: -8_000_000,
+          shortageAmount: 8_000_000,
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<DashboardPage />);
+    await screen.findByRole("heading", { name: "지급 일정 캘린더" });
+    await user.click(screen.getByRole("button", { name: "추가 지출 계산" }));
+    await user.type(screen.getByLabelText("추가 지출 항목"), "가전 비용");
+    const amount = screen.getByLabelText("추가로 예상되는 지출");
+    await user.type(amount, "23000000");
+    await user.click(screen.getByRole("button", { name: "계산하기" }));
+    expect(await screen.findByText("⚠ 부족 8,000,000원")).toBeInTheDocument();
+
+    await user.type(amount, "0");
+
+    expect(screen.queryByText("⚠ 부족 8,000,000원")).not.toBeInTheDocument();
+    expect(screen.getByText("현재 예상 잔액")).toBeInTheDocument();
+  });
 });
