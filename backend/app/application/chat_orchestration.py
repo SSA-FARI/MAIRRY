@@ -5,6 +5,7 @@ from typing import NoReturn
 
 from fastapi import status
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from ai.chat_agent.agent import decide_tool
 from ai.chat_agent.fallback import IntentDecision, classify_message
@@ -43,6 +44,24 @@ class ChatOrchestrationService:
         if decision.intent == ChatIntent.UNKNOWN:
             return self._unsupported_response()
 
+        result = await run_in_threadpool(self._execute_tool, message, decision)
+        if result is None:
+            return self._unsupported_response()
+        draft = explain_tool_result(message, result)
+        draft = await self._generate_answer(
+            message,
+            result,
+            draft,
+            use_provider=use_provider_for_answer,
+        )
+        return self._to_response(draft)
+
+    def _execute_tool(
+        self,
+        message: str,
+        decision: IntentDecision,
+    ) -> ToolResultView | None:
+        """Resolve scoped arguments and run synchronous DB Tools in one worker thread."""
         arguments = dict(decision.arguments)
         if (
             decision.intent in {ChatIntent.CONTRACT, ChatIntent.SCHEDULE}
@@ -57,20 +76,12 @@ class ChatOrchestrationService:
 
         call = decide_tool(decision.intent, arguments)
         if call is None:
-            return self._unsupported_response()
-        result = self._tools.execute(
+            return None
+        return self._tools.execute(
             call.tool_name,
             call.arguments,
             self._configuration.demo_user_id,
         )
-        draft = explain_tool_result(message, result)
-        draft = await self._generate_answer(
-            message,
-            result,
-            draft,
-            use_provider=use_provider_for_answer,
-        )
-        return self._to_response(draft)
 
     async def _classify_intent(self, message: str) -> tuple[IntentDecision, bool]:
         if self._provider is None:

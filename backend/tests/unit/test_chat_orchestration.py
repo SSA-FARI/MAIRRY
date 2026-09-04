@@ -1,4 +1,5 @@
 import asyncio
+import threading
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import UUID
@@ -22,8 +23,11 @@ class StubRegistry:
     def __init__(self, result: ToolResultView) -> None:
         self.result = result
         self.calls: list[tuple[str, dict[str, object], UUID]] = []
+        self.resolve_thread_ids: list[int] = []
+        self.execute_thread_ids: list[int] = []
 
     def resolve_contract_id(self, _message: str, _user_id: UUID) -> UUID:
+        self.resolve_thread_ids.append(threading.get_ident())
         return CONTRACT_ID
 
     def execute(
@@ -32,6 +36,7 @@ class StubRegistry:
         arguments: dict[str, object],
         user_id: UUID,
     ) -> ToolResultView:
+        self.execute_thread_ids.append(threading.get_ident())
         self.calls.append((tool_name, arguments, user_id))
         return self.result
 
@@ -252,6 +257,30 @@ def test_live_provider_intent_and_answer_are_connected_without_replacing_evidenc
     assert registry.calls[0][0] == "getUpcomingPayments"
     assert response.answer == "A웨딩홀 잔금일은 2027-04-30입니다."
     assert response.citations[0].source_text.startswith("잔금 20,000,000원")
+
+
+def test_synchronous_tool_resolution_and_execution_run_in_one_worker_thread() -> None:
+    result = ToolResultView(
+        status="NOT_FOUND",
+        tool_name="getUpcomingPayments",
+        data=None,
+        evidence=[],
+        calculated_at=NOW,
+        error={"message": "no payment"},
+    )
+    service, registry = _service(ChatIntent.SCHEDULE, {"limit": 1}, result)
+    event_loop_thread_id: int | None = None
+
+    async def invoke() -> None:
+        nonlocal event_loop_thread_id
+        event_loop_thread_id = threading.get_ident()
+        await service.process("A웨딩홀 잔금일 언제야?")
+
+    asyncio.run(invoke())
+
+    assert event_loop_thread_id is not None
+    assert registry.resolve_thread_ids == registry.execute_thread_ids
+    assert registry.execute_thread_ids[0] != event_loop_thread_id
 
 
 def test_provider_intent_failure_uses_rule_based_classifier() -> None:
