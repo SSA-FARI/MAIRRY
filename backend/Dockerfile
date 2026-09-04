@@ -18,7 +18,7 @@ COPY backend/ai ./ai
 FROM base AS development
 RUN pip install --no-cache-dir -e ".[dev]"
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/app", "--reload-dir", "/app/ai"]
 
 FROM base AS production
 RUN pip install --no-cache-dir .
