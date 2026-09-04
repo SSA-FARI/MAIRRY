@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { analyzeDocument, getDocument } from "@/domains/documents";
-import type { DocumentDetail, PaymentStatus } from "@/domains/documents";
+import { analyzeDocument, getDocument, getDocumentPreviewUrl } from "@/domains/documents";
+import type { DocumentDetail, DocumentPreviewUrl, PaymentStatus } from "@/domains/documents";
 import { ApiError } from "@/shared/api/api-client";
 import { formatWon } from "@/shared/lib/money";
 import { confirmDocument, getContract, updateContract } from "../api/contracts-api";
@@ -27,6 +27,8 @@ const emptyErrors: ReviewValidationErrors = {
 
 const ANALYSIS_POLL_INTERVAL_MS = 1000;
 const ANALYSIS_POLL_TIMEOUT_MS = 60000;
+/** setTimeout delay가 이 값(32비트 부호있는 정수 최댓값)을 넘으면 즉시 실행되어 버린다. */
+const MAX_SAFE_TIMEOUT_MS = 2_147_483_647;
 
 export function ContractReviewPage({ documentId }: { documentId: string }) {
   return <ContractFormPage documentId={documentId} />;
@@ -51,6 +53,12 @@ function ContractFormPage({ documentId, contractId }: ContractFormPageProps) {
   const [reloadKey, setReloadKey] = useState(0);
   const [isRetryingAnalysis, setIsRetryingAnalysis] = useState(false);
   const [retryErrorMessage, setRetryErrorMessage] = useState("");
+  const [contractDocumentId, setContractDocumentId] = useState<string | undefined>(undefined);
+  const [previewUrl, setPreviewUrl] = useState<DocumentPreviewUrl | null>(null);
+  const [previewErrorMessage, setPreviewErrorMessage] = useState("");
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [previewReloadKey, setPreviewReloadKey] = useState(0);
+  const previewDocumentId = documentId ?? contractDocumentId;
 
   useEffect(() => {
     let cancelled = false;
@@ -63,6 +71,7 @@ function ContractFormPage({ documentId, contractId }: ContractFormPageProps) {
           const contract = await getContract(contractId);
           if (cancelled) return;
           setForm(createContractForm(contract));
+          setContractDocumentId(contract.documentId);
           setPageState("ready");
           return;
         }
@@ -114,6 +123,33 @@ function ContractFormPage({ documentId, contractId }: ContractFormPageProps) {
       if (timer) clearTimeout(timer);
     };
   }, [contractId, documentId, reloadKey]);
+
+  useEffect(() => {
+    if (pageState !== "ready" || previewDocumentId === undefined) return;
+    let cancelled = false;
+    setIsPreviewLoading(true);
+    setPreviewErrorMessage("");
+    setPreviewUrl(null);
+
+    getDocumentPreviewUrl(previewDocumentId)
+      .then((result) => {
+        if (cancelled) return;
+        setPreviewUrl(result);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setPreviewErrorMessage(
+          error instanceof ApiError ? error.message : "원문 미리보기를 불러오지 못했습니다.",
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setIsPreviewLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pageState, previewDocumentId, previewReloadKey]);
 
   function updatePayment(index: number, field: string, value: string) {
     setForm((current) => {
@@ -293,8 +329,14 @@ function ContractFormPage({ documentId, contractId }: ContractFormPageProps) {
         <aside className="evidence-panel" aria-labelledby="evidence-title">
           <div className="sticky-panel">
             <p className="eyebrow">SOURCE EVIDENCE</p>
-            <h2 id="evidence-title">계약서 근거</h2>
-            <p>현재 원문 미리보기 API가 없어 AI가 보존한 근거 문장을 표시합니다.</p>
+            <h2 id="evidence-title">계약서 원문</h2>
+            <DocumentPreviewPane
+              previewUrl={previewUrl}
+              isLoading={isPreviewLoading}
+              errorMessage={previewErrorMessage}
+              onRetry={() => setPreviewReloadKey((key) => key + 1)}
+            />
+            <h3 className="evidence-subheading">근거 문장</h3>
             <EvidenceList form={form} />
           </div>
         </aside>
@@ -524,6 +566,132 @@ function ContractFormPage({ documentId, contractId }: ContractFormPageProps) {
         </form>
       </div>
     </main>
+  );
+}
+
+function resolvePreviewKind(url: string): "pdf" | "image" | "unknown" {
+  const pathname = (() => {
+    try {
+      return new URL(url).pathname;
+    } catch {
+      return url;
+    }
+  })();
+  const extension = pathname.split(".").pop()?.toLowerCase();
+  if (extension === "pdf") return "pdf";
+  if (extension === "jpg" || extension === "jpeg" || extension === "png") return "image";
+  return "unknown";
+}
+
+/** presigned URL은 자사 백엔드(boto3 generate_presigned_url)만 발급하므로 https 외 스킴은
+ * 설정 오류 신호로 보고 렌더링을 거부한다. */
+function isRenderablePreviewUrl(url: string): boolean {
+  try {
+    return new URL(url).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function DocumentPreviewPane({
+  previewUrl,
+  isLoading,
+  errorMessage,
+  onRetry,
+}: {
+  previewUrl: DocumentPreviewUrl | null;
+  isLoading: boolean;
+  errorMessage: string;
+  onRetry: () => void;
+}) {
+  const [hasLoadError, setHasLoadError] = useState(false);
+
+  useEffect(() => {
+    setHasLoadError(false);
+    if (!previewUrl) return;
+
+    /** iframe은 403(만료)에도 onError를 내지 않으므로 expiresAt을 직접 타이머로 감시한다.
+     * setTimeout의 delay는 32비트 정수를 넘으면 즉시 실행되어 버리므로(오버플로우 시 1ms로
+     * 처리됨) 안전한 범위로 잘라 재확인을 반복한다. */
+    let timer: ReturnType<typeof setTimeout>;
+    const scheduleExpiryCheck = () => {
+      const expiresInMs = new Date(previewUrl.expiresAt).getTime() - Date.now();
+      /** expiresAt이 파싱 불가능한 값이면 NaN이 되고, setTimeout(fn, NaN)은 0ms로 취급되어
+       * scheduleExpiryCheck가 그대로 재귀 호출되며 브라우저를 CPU 100%로 묶어 버린다. */
+      if (Number.isNaN(expiresInMs) || expiresInMs <= 0) {
+        setHasLoadError(true);
+        return;
+      }
+      timer = setTimeout(scheduleExpiryCheck, Math.min(expiresInMs, MAX_SAFE_TIMEOUT_MS));
+    };
+    scheduleExpiryCheck();
+    return () => clearTimeout(timer);
+  }, [previewUrl]);
+
+  if (isLoading && !previewUrl) {
+    return (
+      <p className="muted-panel" role="status">
+        원문을 불러오는 중입니다…
+      </p>
+    );
+  }
+
+  const isUrlInvalid = previewUrl !== null && !isRenderablePreviewUrl(previewUrl.url);
+  /** hasLoadError는 (iframe onError를 신뢰할 수 없어 도입한) expiresAt 타이머 기반 추정치라
+   * 클라이언트 시계가 서버보다 빠르면 실제로는 유효한 URL을 오탐할 수 있다. URL 자체는 여전히
+   * 유효할 가능성이 높으므로, 화면 표시만 차단하고 "새 탭에서 열기"는 계속 제공해 완전히
+   * 원문 접근이 막히지 않게 한다. */
+  const isSuspectedExpiry = previewUrl !== null && !isUrlInvalid && hasLoadError;
+
+  if (errorMessage || isUrlInvalid || isSuspectedExpiry) {
+    return (
+      <div className="preview-error" role="alert">
+        <p>
+          {isUrlInvalid
+            ? "미리보기 URL을 표시할 수 없습니다."
+            : isSuspectedExpiry
+              ? "미리보기 표시 시간이 지나 원문을 열 수 없습니다."
+              : errorMessage}
+        </p>
+        <button type="button" className="secondary-button" onClick={onRetry}>
+          원문 다시 불러오기
+        </button>
+        {isSuspectedExpiry && (
+          <a href={previewUrl.url} target="_blank" rel="noreferrer" className="text-link">
+            새 탭에서 원문 열기
+          </a>
+        )}
+      </div>
+    );
+  }
+
+  if (!previewUrl) {
+    return <p className="muted-panel">원문 미리보기를 준비하고 있습니다.</p>;
+  }
+
+  const kind = resolvePreviewKind(previewUrl.url);
+
+  return (
+    <div className="preview-frame">
+      {kind === "pdf" && (
+        <iframe
+          src={previewUrl.url}
+          title="계약서 원문 미리보기"
+          onError={() => setHasLoadError(true)}
+        />
+      )}
+      {kind === "image" && (
+        <img
+          src={previewUrl.url}
+          alt="계약서 원문 미리보기"
+          onError={() => setHasLoadError(true)}
+        />
+      )}
+      {kind === "unknown" && <p className="muted-panel">이 형식은 화면에서 미리 볼 수 없습니다.</p>}
+      <a href={previewUrl.url} target="_blank" rel="noreferrer" className="text-link">
+        새 탭에서 원문 열기
+      </a>
+    </div>
   );
 }
 

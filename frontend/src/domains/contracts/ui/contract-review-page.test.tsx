@@ -15,7 +15,12 @@ const documentId = "8f32eb5e-a2ac-44be-8ce8-393d466bc901";
 const contractId = "90af8db0-a099-40a0-bb92-720ec331a6a0";
 const documentUrl = `http://localhost:8000/api/documents/${documentId}`;
 const confirmUrl = `${documentUrl}/confirm`;
+const previewUrlEndpoint = `${documentUrl}/preview-url`;
 const contractUrl = `http://localhost:8000/api/contracts/${contractId}`;
+const previewUrlResponse = {
+  url: "https://storage.example/mairry/8f32eb5e-a2ac-44be-8ce8-393d466bc901.pdf?X-Amz-Signature=mock",
+  expiresAt: "2027-01-01T00:05:00+09:00",
+};
 const documentResponse = {
   id: documentId,
   originalName: "hall.pdf",
@@ -58,7 +63,10 @@ const server = setupServer();
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 afterAll(() => server.close());
 afterEach(() => server.resetHandlers());
-beforeEach(() => push.mockReset());
+beforeEach(() => {
+  push.mockReset();
+  server.use(http.get(previewUrlEndpoint, () => HttpResponse.json(previewUrlResponse)));
+});
 
 describe("ContractReviewPage", () => {
   it("shows extraction values, evidence, and warnings", async () => {
@@ -72,6 +80,123 @@ describe("ContractReviewPage", () => {
     expect(screen.getByText("잔금 20,000,000원은 2027년 4월 30일까지")).toBeVisible();
     expect(screen.getByText(/근거: 잔금 20,000,000원은 2027년 4월 30일까지/)).toBeVisible();
     expect(screen.getByText("총액과 지급항목 합계를 확인해 주세요.")).toBeVisible();
+    expect(await screen.findByTitle("계약서 원문 미리보기")).toHaveAttribute(
+      "src",
+      previewUrlResponse.url,
+    );
+    expect(screen.getByRole("link", { name: "새 탭에서 원문 열기" })).toHaveAttribute(
+      "href",
+      previewUrlResponse.url,
+    );
+  });
+
+  it("shows a retry option when the preview URL cannot be loaded", async () => {
+    server.use(
+      http.get(documentUrl, () => HttpResponse.json(documentResponse)),
+      http.get(
+        previewUrlEndpoint,
+        () =>
+          HttpResponse.json(
+            { error: { code: "STORAGE_ERROR", message: "원문을 불러오지 못했습니다." } },
+            { status: 502 },
+          ),
+        { once: true },
+      ),
+    );
+
+    const user = userEvent.setup();
+    render(<ContractReviewPage documentId={documentId} />);
+
+    expect(await screen.findByText("원문을 불러오지 못했습니다.")).toBeVisible();
+
+    server.use(http.get(previewUrlEndpoint, () => HttpResponse.json(previewUrlResponse)));
+    await user.click(screen.getByRole("button", { name: "원문 다시 불러오기" }));
+
+    expect(await screen.findByTitle("계약서 원문 미리보기")).toHaveAttribute(
+      "src",
+      previewUrlResponse.url,
+    );
+  });
+
+  it("shows a retry option once the preview URL's expiresAt has passed", async () => {
+    server.use(
+      http.get(documentUrl, () => HttpResponse.json(documentResponse)),
+      http.get(previewUrlEndpoint, () =>
+        HttpResponse.json({ ...previewUrlResponse, expiresAt: "2020-01-01T00:00:00+09:00" }),
+      ),
+    );
+
+    render(<ContractReviewPage documentId={documentId} />);
+
+    expect(
+      await screen.findByText("미리보기 표시 시간이 지나 원문을 열 수 없습니다."),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "원문 다시 불러오기" })).toBeVisible();
+    // 시계 오차로 만료 타이머가 오탐하더라도 URL 자체는 유효할 수 있으므로, 직접 접근 경로는
+    // 남겨 둔다 (07_API_SPEC.md 기준 클라이언트-서버 시계 동기화는 이 기능의 범위 밖).
+    expect(screen.getByRole("link", { name: "새 탭에서 원문 열기" })).toHaveAttribute(
+      "href",
+      previewUrlResponse.url,
+    );
+  });
+
+  it("shows an error without freezing when expiresAt is not a valid date", async () => {
+    server.use(
+      http.get(documentUrl, () => HttpResponse.json(documentResponse)),
+      http.get(previewUrlEndpoint, () =>
+        HttpResponse.json({ ...previewUrlResponse, expiresAt: "not-a-date" }),
+      ),
+    );
+
+    render(<ContractReviewPage documentId={documentId} />);
+
+    expect(
+      await screen.findByText("미리보기 표시 시간이 지나 원문을 열 수 없습니다."),
+    ).toBeVisible();
+  });
+
+  it("shows a loading state again while a retry is in flight, instead of the stale error", async () => {
+    // 먼저 만료된 URL로 "표시 시간이 지남" 오류를 띄운 뒤, 재시도 시 응답을 지연시켜
+    // 그 사이에 이전 previewUrl이 남아 로딩 표시를 가리지 않는지 확인한다.
+    server.use(
+      http.get(documentUrl, () => HttpResponse.json(documentResponse)),
+      http.get(previewUrlEndpoint, () =>
+        HttpResponse.json({ ...previewUrlResponse, expiresAt: "2020-01-01T00:00:00+09:00" }),
+      ),
+    );
+
+    const user = userEvent.setup();
+    render(<ContractReviewPage documentId={documentId} />);
+    await screen.findByText("미리보기 표시 시간이 지나 원문을 열 수 없습니다.");
+
+    server.use(
+      http.get(previewUrlEndpoint, async () => {
+        await delay(50);
+        return HttpResponse.json(previewUrlResponse);
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "원문 다시 불러오기" }));
+
+    expect(await screen.findByText("원문을 불러오는 중입니다…")).toBeVisible();
+    expect(
+      screen.queryByText("미리보기 표시 시간이 지나 원문을 열 수 없습니다."),
+    ).not.toBeInTheDocument();
+    expect(await screen.findByTitle("계약서 원문 미리보기")).toBeVisible();
+  });
+
+  it("refuses to render a non-https preview URL", async () => {
+    server.use(
+      http.get(documentUrl, () => HttpResponse.json(documentResponse)),
+      http.get(previewUrlEndpoint, () =>
+        HttpResponse.json({ ...previewUrlResponse, url: "javascript:alert(1)" }),
+      ),
+    );
+
+    render(<ContractReviewPage documentId={documentId} />);
+
+    expect(await screen.findByText("미리보기 URL을 표시할 수 없습니다.")).toBeVisible();
+    expect(screen.queryByTitle("계약서 원문 미리보기")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "새 탭에서 원문 열기" })).not.toBeInTheDocument();
   });
 
   it("submits edited values and moves to the confirmed contract", async () => {

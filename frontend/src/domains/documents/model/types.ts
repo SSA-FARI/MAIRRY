@@ -37,3 +37,8 @@ export interface DocumentDetail extends DocumentSummary {
   extraction: DocumentExtraction | null;
   error: { code: string; message: string; details: Record<string, unknown> } | null;
 }
+
+export interface DocumentPreviewUrl {
+  url: string;
+  expiresAt: string;
+}
