@@ -11,8 +11,8 @@ from ai.document_extraction.schemas import DocumentExtraction
 SHA256_HEX_LENGTH = 64
 HASH_READ_CHUNK_SIZE = 1024 * 1024
 FALLBACK_ASSET_DIRECTORY = Path(__file__).with_name("fallback_assets")
-DEFAULT_DEMO_DOCUMENT_PATH = FALLBACK_ASSET_DIRECTORY / "demo-wedding-hall-contract.fixture"
-DEFAULT_DEMO_DOCUMENT_SHA256 = "2e5c2a42c218124c3e60520b65a065f38ef4c7746f1fe52f5581816ebc7c83fa"
+DEFAULT_DEMO_DOCUMENT_PATH = FALLBACK_ASSET_DIRECTORY / "demo-wedding-hall-contract.pdf"
+DEFAULT_DEMO_DOCUMENT_SHA256 = "cf27c6365f9a7410dcff87efafe59b05cd27c0083952fa4e14286b3aadf2217e"
 DEFAULT_DEMO_EXTRACTION_PATH = FALLBACK_ASSET_DIRECTORY / "demo-wedding-hall-extraction.json"
 
 

@@ -55,4 +55,4 @@ include = ["app*", "ai*"]
 
 [tool.setuptools.package-data]
 "ai" = ["prompts/*.md"]
-"ai.document_extraction" = ["fallback_assets/*.fixture", "fallback_assets/*.json"]
+"ai.document_extraction" = ["fallback_assets/*.pdf", "fallback_assets/*.json"]
