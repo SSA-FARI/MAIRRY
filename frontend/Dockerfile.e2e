@@ -1,0 +1,20 @@
+# syntax=docker/dockerfile:1.7
+
+FROM mcr.microsoft.com/playwright:v1.62.1-noble
+
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+
+RUN corepack enable
+WORKDIR /workspace
+
+COPY pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY frontend/package.json ./frontend/package.json
+RUN pnpm install --filter @mairry/web... --frozen-lockfile
+
+COPY frontend/ ./frontend/
+COPY backend/ai/document_extraction/fallback_assets/demo-wedding-hall-contract.pdf \
+    ./backend/ai/document_extraction/fallback_assets/demo-wedding-hall-contract.pdf
+
+WORKDIR /workspace/frontend
+CMD ["pnpm", "test:e2e"]

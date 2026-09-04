@@ -14,6 +14,7 @@ from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
+from app.core.database import get_db
 from app.domains.auth.passwords import create_unusable_demo_password_hash
 from app.domains.users.models import User
 from app.main import app
@@ -46,6 +47,17 @@ def database_engine() -> Engine:
     engine = create_engine(database_url)
     yield engine
     engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def use_isolated_database(database_engine: Engine):
+    def override_get_db():
+        with Session(database_engine) as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    yield
+    app.dependency_overrides.pop(get_db, None)
 
 
 def _configuration(database_url: str, *, user_id: uuid.UUID, login_id: str) -> Settings:

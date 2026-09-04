@@ -33,6 +33,7 @@ services:
     environment:
       APP_ENV: docker
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-mairry}:${POSTGRES_PASSWORD:-mairry}@postgres:5432/${POSTGRES_DB:-mairry}
+      TEST_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-mairry}:${POSTGRES_PASSWORD:-mairry}@postgres-test:5432/mairry_test
       DEMO_USER_ID: ${DEMO_USER_ID:?DEMO_USER_ID is required}
       DEMO_USER_LOGIN_ID: ${DEMO_USER_LOGIN_ID:?DEMO_USER_LOGIN_ID is required}
       DEMO_USER_DISPLAY_NAME: ${DEMO_USER_DISPLAY_NAME:?DEMO_USER_DISPLAY_NAME is required}
@@ -52,6 +53,7 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app
+      - ./contracts:/contracts:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -66,6 +68,7 @@ services:
       retries: 10
       start_period: 20s
 
+
   postgres:
     image: postgres:16-alpine
     environment:
@@ -78,6 +81,20 @@ services:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mairry} -d ${POSTGRES_DB:-mairry}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  postgres-test:
+    image: postgres:16-alpine
+    profiles: ["test"]
+    environment:
+      POSTGRES_DB: mairry_test
+      POSTGRES_USER: ${POSTGRES_USER:-mairry}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mairry}
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mairry} -d mairry_test"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -111,6 +128,96 @@ services:
       mc anonymous set none local/${OBJECT_STORAGE_BUCKET:-mairry}
       "
     restart: "no"
+  postgres-e2e:
+    image: postgres:16-alpine
+    profiles: ["e2e"]
+    environment:
+      POSTGRES_DB: mairry_e2e
+      POSTGRES_USER: ${POSTGRES_USER:-mairry}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mairry}
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mairry} -d mairry_e2e"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend-e2e:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: development
+    profiles: ["e2e"]
+    command:
+      - /bin/sh
+      - -c
+      - python -m alembic -c alembic.ini upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000
+    environment:
+      APP_ENV: e2e
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-mairry}:${POSTGRES_PASSWORD:-mairry}@postgres-e2e:5432/mairry_e2e
+      DEMO_USER_ID: 10000000-0000-0000-0000-000000000001
+      DEMO_WEDDING_PLAN_ID: 10000000-0000-0000-0000-000000000002
+      DEMO_MEMBER_ID: 10000000-0000-0000-0000-000000000003
+      DEMO_USER_LOGIN_ID: demo-e2e
+      DEMO_USER_DISPLAY_NAME: E2E Demo User
+      DEMO_USER_EMAIL: ""
+      AI_API_KEY: ""
+      AI_MODEL: ""
+      OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      OBJECT_STORAGE_PUBLIC_ENDPOINT: http://minio:9000
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-mairry}
+      OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-minio}
+      OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-miniosecret}
+      CORS_ORIGINS: http://frontend-e2e:3000
+      ENABLE_DEMO_FALLBACK: "true"
+    depends_on:
+      postgres-e2e:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  frontend-e2e:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      target: development
+    profiles: ["e2e"]
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://backend-e2e:8000/api
+    depends_on:
+      backend-e2e:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  e2e:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile.e2e
+    profiles: ["e2e"]
+    environment:
+      E2E_BASE_URL: http://frontend-e2e:3000
+    ipc: host
+    depends_on:
+      frontend-e2e:
+        condition: service_healthy
+    volumes:
+      - ./playwright-report:/workspace/playwright-report
+      - ./test-results:/workspace/test-results
+
 
 volumes:
   frontend-node-modules:
