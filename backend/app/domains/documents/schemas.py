@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from uuid import UUID
 
 from pydantic import Field
@@ -34,6 +34,11 @@ class DocumentExtractionResponse(ApiModel):
     payments: list[ExtractedPaymentResponse]
     cancellation_terms: list[CancellationTermResponse]
     warnings: list[str]
+
+
+class DocumentPreviewUrlResponse(ApiModel):
+    url: str
+    expires_at: datetime
 
 
 class DocumentDetailResponse(ApiModel):

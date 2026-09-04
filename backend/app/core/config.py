@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     ai_api_key: str = ""
     ai_model: str = ""
     object_storage_endpoint: str = "http://localhost:9000"
+    # Docker Compose 안에서는 backend가 컨테이너 내부 호스트(예: minio:9000)로 object_storage_endpoint를
+    # 쓰지만, presigned URL은 브라우저가 직접 열어야 하므로 host에 노출된 이 주소로 서명해야 한다.
+    object_storage_public_endpoint: str = "http://localhost:9000"
     object_storage_bucket: str = "mairry"
     object_storage_access_key: str = "minio"
     object_storage_secret_key: str = "miniosecret"
