@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { analyzeDocument, getDocument } from "@/domains/documents";
-import type { DocumentDetail, PaymentStatus } from "@/domains/documents";
+import { analyzeDocument, getDocument, getDocumentPreviewUrl } from "@/domains/documents";
+import type { DocumentDetail, DocumentPreviewUrl, PaymentStatus } from "@/domains/documents";
 import { ApiError } from "@/shared/api/api-client";
 import { formatWon } from "@/shared/lib/money";
 import { confirmDocument, getContract, updateContract } from "../api/contracts-api";
@@ -51,6 +51,12 @@ function ContractFormPage({ documentId, contractId }: ContractFormPageProps) {
   const [reloadKey, setReloadKey] = useState(0);
   const [isRetryingAnalysis, setIsRetryingAnalysis] = useState(false);
   const [retryErrorMessage, setRetryErrorMessage] = useState("");
+  const [contractDocumentId, setContractDocumentId] = useState<string | undefined>(undefined);
+  const [previewUrl, setPreviewUrl] = useState<DocumentPreviewUrl | null>(null);
+  const [previewErrorMessage, setPreviewErrorMessage] = useState("");
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [previewReloadKey, setPreviewReloadKey] = useState(0);
+  const previewDocumentId = documentId ?? contractDocumentId;
 
   useEffect(() => {
     let cancelled = false;
@@ -63,6 +69,7 @@ function ContractFormPage({ documentId, contractId }: ContractFormPageProps) {
           const contract = await getContract(contractId);
           if (cancelled) return;
           setForm(createContractForm(contract));
+          setContractDocumentId(contract.documentId);
           setPageState("ready");
           return;
         }
@@ -114,6 +121,32 @@ function ContractFormPage({ documentId, contractId }: ContractFormPageProps) {
       if (timer) clearTimeout(timer);
     };
   }, [contractId, documentId, reloadKey]);
+
+  useEffect(() => {
+    if (pageState !== "ready" || previewDocumentId === undefined) return;
+    let cancelled = false;
+    setIsPreviewLoading(true);
+    setPreviewErrorMessage("");
+
+    getDocumentPreviewUrl(previewDocumentId)
+      .then((result) => {
+        if (cancelled) return;
+        setPreviewUrl(result);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setPreviewErrorMessage(
+          error instanceof ApiError ? error.message : "원문 미리보기를 불러오지 못했습니다.",
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setIsPreviewLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pageState, previewDocumentId, previewReloadKey]);
 
   function updatePayment(index: number, field: string, value: string) {
     setForm((current) => {
@@ -293,8 +326,14 @@ function ContractFormPage({ documentId, contractId }: ContractFormPageProps) {
         <aside className="evidence-panel" aria-labelledby="evidence-title">
           <div className="sticky-panel">
             <p className="eyebrow">SOURCE EVIDENCE</p>
-            <h2 id="evidence-title">계약서 근거</h2>
-            <p>현재 원문 미리보기 API가 없어 AI가 보존한 근거 문장을 표시합니다.</p>
+            <h2 id="evidence-title">계약서 원문</h2>
+            <DocumentPreviewPane
+              previewUrl={previewUrl}
+              isLoading={isPreviewLoading}
+              errorMessage={previewErrorMessage}
+              onRetry={() => setPreviewReloadKey((key) => key + 1)}
+            />
+            <h3 className="evidence-subheading">근거 문장</h3>
             <EvidenceList form={form} />
           </div>
         </aside>
@@ -524,6 +563,90 @@ function ContractFormPage({ documentId, contractId }: ContractFormPageProps) {
         </form>
       </div>
     </main>
+  );
+}
+
+function resolvePreviewKind(url: string): "pdf" | "image" | "unknown" {
+  const pathname = (() => {
+    try {
+      return new URL(url).pathname;
+    } catch {
+      return url;
+    }
+  })();
+  const extension = pathname.split(".").pop()?.toLowerCase();
+  if (extension === "pdf") return "pdf";
+  if (extension === "jpg" || extension === "jpeg" || extension === "png") return "image";
+  return "unknown";
+}
+
+function DocumentPreviewPane({
+  previewUrl,
+  isLoading,
+  errorMessage,
+  onRetry,
+}: {
+  previewUrl: DocumentPreviewUrl | null;
+  isLoading: boolean;
+  errorMessage: string;
+  onRetry: () => void;
+}) {
+  const [hasLoadError, setHasLoadError] = useState(false);
+
+  useEffect(() => {
+    setHasLoadError(false);
+  }, [previewUrl?.url]);
+
+  if (isLoading && !previewUrl) {
+    return (
+      <p className="muted-panel" role="status">
+        원문을 불러오는 중입니다…
+      </p>
+    );
+  }
+
+  if (errorMessage || (previewUrl && hasLoadError)) {
+    return (
+      <div className="preview-error" role="alert">
+        <p>
+          {hasLoadError
+            ? "미리보기 표시 시간이 지나 원문을 열 수 없습니다."
+            : errorMessage}
+        </p>
+        <button type="button" className="secondary-button" onClick={onRetry}>
+          원문 다시 불러오기
+        </button>
+      </div>
+    );
+  }
+
+  if (!previewUrl) {
+    return <p className="muted-panel">원문 미리보기를 준비하고 있습니다.</p>;
+  }
+
+  const kind = resolvePreviewKind(previewUrl.url);
+
+  return (
+    <div className="preview-frame">
+      {kind === "pdf" && (
+        <iframe
+          src={previewUrl.url}
+          title="계약서 원문 미리보기"
+          onError={() => setHasLoadError(true)}
+        />
+      )}
+      {kind === "image" && (
+        <img
+          src={previewUrl.url}
+          alt="계약서 원문 미리보기"
+          onError={() => setHasLoadError(true)}
+        />
+      )}
+      {kind === "unknown" && <p className="muted-panel">이 형식은 화면에서 미리 볼 수 없습니다.</p>}
+      <a href={previewUrl.url} target="_blank" rel="noreferrer" className="text-link">
+        새 탭에서 원문 열기
+      </a>
+    </div>
   );
 }
 

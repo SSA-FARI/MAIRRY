@@ -15,7 +15,12 @@ const documentId = "8f32eb5e-a2ac-44be-8ce8-393d466bc901";
 const contractId = "90af8db0-a099-40a0-bb92-720ec331a6a0";
 const documentUrl = `http://localhost:8000/api/documents/${documentId}`;
 const confirmUrl = `${documentUrl}/confirm`;
+const previewUrlEndpoint = `${documentUrl}/preview-url`;
 const contractUrl = `http://localhost:8000/api/contracts/${contractId}`;
+const previewUrlResponse = {
+  url: "https://storage.example/mairry/8f32eb5e-a2ac-44be-8ce8-393d466bc901.pdf?X-Amz-Signature=mock",
+  expiresAt: "2027-01-01T00:05:00+09:00",
+};
 const documentResponse = {
   id: documentId,
   originalName: "hall.pdf",
@@ -58,7 +63,10 @@ const server = setupServer();
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 afterAll(() => server.close());
 afterEach(() => server.resetHandlers());
-beforeEach(() => push.mockReset());
+beforeEach(() => {
+  push.mockReset();
+  server.use(http.get(previewUrlEndpoint, () => HttpResponse.json(previewUrlResponse)));
+});
 
 describe("ContractReviewPage", () => {
   it("shows extraction values, evidence, and warnings", async () => {
@@ -72,6 +80,38 @@ describe("ContractReviewPage", () => {
     expect(screen.getByText("잔금 20,000,000원은 2027년 4월 30일까지")).toBeVisible();
     expect(screen.getByText(/근거: 잔금 20,000,000원은 2027년 4월 30일까지/)).toBeVisible();
     expect(screen.getByText("총액과 지급항목 합계를 확인해 주세요.")).toBeVisible();
+    expect(await screen.findByTitle("계약서 원문 미리보기")).toHaveAttribute(
+      "src",
+      previewUrlResponse.url,
+    );
+    expect(screen.getByRole("link", { name: "새 탭에서 원문 열기" })).toHaveAttribute(
+      "href",
+      previewUrlResponse.url,
+    );
+  });
+
+  it("shows a retry option when the preview URL cannot be loaded", async () => {
+    server.use(
+      http.get(documentUrl, () => HttpResponse.json(documentResponse)),
+      http.get(
+        previewUrlEndpoint,
+        () => HttpResponse.json({ error: { code: "STORAGE_ERROR", message: "원문을 불러오지 못했습니다." } }, { status: 502 }),
+        { once: true },
+      ),
+    );
+
+    const user = userEvent.setup();
+    render(<ContractReviewPage documentId={documentId} />);
+
+    expect(await screen.findByText("원문을 불러오지 못했습니다.")).toBeVisible();
+
+    server.use(http.get(previewUrlEndpoint, () => HttpResponse.json(previewUrlResponse)));
+    await user.click(screen.getByRole("button", { name: "원문 다시 불러오기" }));
+
+    expect(await screen.findByTitle("계약서 원문 미리보기")).toHaveAttribute(
+      "src",
+      previewUrlResponse.url,
+    );
   });
 
   it("submits edited values and moves to the confirmed contract", async () => {
