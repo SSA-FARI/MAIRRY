@@ -1,5 +1,6 @@
 import { AuthGuard } from "@/domains/auth";
 import { ContractEditPage } from "@/domains/contracts";
+import { AppHeader } from "@/shared/ui/app-header";
 
 export default async function ContractEditRoute({
   params,
@@ -9,7 +10,10 @@ export default async function ContractEditRoute({
   const { contractId } = await params;
   return (
     <AuthGuard>
-      <ContractEditPage contractId={contractId} />
+      <div className="app-shell">
+        <AppHeader active="contracts" />
+        <ContractEditPage contractId={contractId} />
+      </div>
     </AuthGuard>
   );
 }

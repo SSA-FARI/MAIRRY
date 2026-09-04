@@ -6,9 +6,17 @@ import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@/shared/api/api-client";
 import { formatDate } from "@/shared/lib/date";
 import { formatWon } from "@/shared/lib/money";
+import { AppHeader } from "@/shared/ui/app-header";
+import { StatusBadge } from "@/shared/ui/status-badge";
 import type { PaymentStatus } from "@/domains/documents";
 import { deleteContract, getContract, updatePaymentStatus } from "../api/contracts-api";
 import type { ContractDetail } from "../model/types";
+
+const PAYMENT_STATUS_META = {
+  PAID: { label: "지급 완료", tone: "success" },
+  UNPAID: { label: "미지급", tone: "primary" },
+  UNKNOWN: { label: "확인 필요", tone: "warning" },
+} as const;
 
 export function ContractDetailPage({ contractId }: { contractId: string }) {
   const router = useRouter();
@@ -107,132 +115,134 @@ export function ContractDetailPage({ contractId }: { contractId: string }) {
   }
 
   return (
-    <main className="content-page">
-      <nav className="page-nav" aria-label="계약 화면 탐색">
-        <Link href="/contracts">계약 관리</Link>
-        <span aria-hidden="true">/</span>
-        <span>{contract.company}</span>
-      </nav>
-      <header className="detail-hero">
-        <div>
-          <span className="status-badge">확정 계약</span>
-          <h1>{contract.company}</h1>
-          <p>{contract.documentType === "WEDDING_HALL" ? "웨딩홀 계약" : "기타 계약"}</p>
-        </div>
-        <div className="detail-total">
-          <span>계약 총액</span>
-          <strong>{formatWon(contract.totalPrice)}</strong>
-        </div>
-      </header>
+    <div className="app-shell">
+      <AppHeader active="contracts" />
+      <main className="content-page">
+        <nav className="page-nav" aria-label="계약 화면 탐색">
+          <Link href="/contracts">계약 관리</Link>
+          <span aria-hidden="true">/</span>
+          <span>{contract.company}</span>
+        </nav>
+        <header className="detail-hero">
+          <div>
+            <StatusBadge tone="success">확정 계약</StatusBadge>
+            <h1>{contract.company}</h1>
+            <p>{contract.documentType === "WEDDING_HALL" ? "웨딩홀 계약" : "기타 계약"}</p>
+          </div>
+          <div className="detail-total">
+            <span>계약 총액</span>
+            <strong>{formatWon(contract.totalPrice)}</strong>
+          </div>
+        </header>
 
-      <div className="detail-actions" aria-label="계약 관리 작업">
-        <Link href={`/contracts/${contractId}/edit`} className="secondary-link">
-          계약 수정
-        </Link>
-        <button
-          type="button"
-          className="danger-button"
-          disabled={isDeleting}
-          onClick={() => void handleDelete()}
-        >
-          {isDeleting ? "삭제하는 중…" : "계약 삭제"}
-        </button>
-      </div>
-      {deleteError && (
-        <p role="alert" className="page-error">
-          {deleteError}
-        </p>
-      )}
-
-      <section className="detail-section" aria-labelledby="payments-title">
-        <div className="section-heading">
-          <h2 id="payments-title">지급항목</h2>
-          <span>{contract.payments.length}건</span>
+        <div className="detail-actions" aria-label="계약 관리 작업">
+          <Link href={`/contracts/${contractId}/edit`} className="secondary-link">
+            계약 수정
+          </Link>
+          <button
+            type="button"
+            className="danger-button"
+            disabled={isDeleting}
+            onClick={() => void handleDelete()}
+          >
+            {isDeleting ? "삭제하는 중…" : "계약 삭제"}
+          </button>
         </div>
-        <p className="section-description">
-          실제 지급 여부가 바뀌면 상태를 바로 변경하세요. 미지급 금액만 자금 현황에 반영됩니다.
-        </p>
-        {paymentError && (
+        {deleteError && (
           <p role="alert" className="page-error">
-            {paymentError}
+            {deleteError}
           </p>
         )}
-        <div className="detail-list">
-          {contract.payments.map((payment) => (
-            <article className="detail-item" key={payment.id}>
-              <div className="detail-item-main">
-                <div>
-                  <span className={`payment-status payment-status-${payment.status.toLowerCase()}`}>
-                    {payment.status === "PAID"
-                      ? "지급 완료"
-                      : payment.status === "UNPAID"
-                        ? "미지급"
-                        : "확인 필요"}
-                  </span>
-                  <h3>{payment.name}</h3>
-                  <p>{formatDate(payment.dueDate)}</p>
-                </div>
-                <div className="payment-item-actions">
-                  <strong>{formatWon(payment.amount)}</strong>
-                  <label>
-                    <span className="sr-only">{payment.name} 지급상태</span>
-                    <select
-                      aria-label={`${payment.name} 지급상태`}
-                      value={payment.status}
-                      disabled={updatingPaymentId !== null}
-                      onChange={(event) =>
-                        void handlePaymentStatusChange(
-                          payment.id,
-                          event.target.value as PaymentStatus,
-                        )
-                      }
-                    >
-                      <option value="UNPAID">미지급</option>
-                      <option value="PAID">지급 완료</option>
-                      <option value="UNKNOWN">확인 필요</option>
-                    </select>
-                  </label>
-                  {updatingPaymentId === payment.id && (
-                    <span className="payment-update-status" role="status">
-                      변경 중…
-                    </span>
-                  )}
-                </div>
-              </div>
-              {payment.sourceText && (
-                <blockquote>
-                  <span>계약서 근거</span>
-                  {payment.sourceText}
-                </blockquote>
-              )}
-            </article>
-          ))}
-        </div>
-      </section>
 
-      <section className="detail-section" aria-labelledby="cancellations-title">
-        <div className="section-heading">
-          <h2 id="cancellations-title">취소조건</h2>
-          <span>{contract.cancellationTerms.length}건</span>
-        </div>
-        {contract.cancellationTerms.length === 0 ? (
-          <p className="muted-panel">등록된 취소조건이 없습니다.</p>
-        ) : (
+        <section className="detail-section" aria-labelledby="payments-title">
+          <div className="section-heading">
+            <h2 id="payments-title">지급항목</h2>
+            <span>{contract.payments.length}건</span>
+          </div>
+          <p className="section-description">
+            실제 지급 여부가 바뀌면 상태를 바로 변경하세요. 미지급 금액만 자금 현황에 반영됩니다.
+          </p>
+          {paymentError && (
+            <p role="alert" className="page-error">
+              {paymentError}
+            </p>
+          )}
           <div className="detail-list">
-            {contract.cancellationTerms.map((term, index) => (
-              <article className="detail-item" key={`${term.summary}-${index}`}>
-                <h3>{term.summary}</h3>
-                {term.sourceText && (
+            {contract.payments.map((payment) => (
+              <article className="detail-item" key={payment.id}>
+                <div className="detail-item-main">
+                  <div>
+                    <StatusBadge
+                      tone={PAYMENT_STATUS_META[payment.status].tone}
+                      className="payment-status"
+                    >
+                      {PAYMENT_STATUS_META[payment.status].label}
+                    </StatusBadge>
+                    <h3>{payment.name}</h3>
+                    <p>{formatDate(payment.dueDate)}</p>
+                  </div>
+                  <div className="payment-item-actions">
+                    <strong>{formatWon(payment.amount)}</strong>
+                    <label>
+                      <span className="sr-only">{payment.name} 지급상태</span>
+                      <select
+                        aria-label={`${payment.name} 지급상태`}
+                        value={payment.status}
+                        disabled={updatingPaymentId !== null}
+                        onChange={(event) =>
+                          void handlePaymentStatusChange(
+                            payment.id,
+                            event.target.value as PaymentStatus,
+                          )
+                        }
+                      >
+                        <option value="UNPAID">미지급</option>
+                        <option value="PAID">지급 완료</option>
+                        <option value="UNKNOWN">확인 필요</option>
+                      </select>
+                    </label>
+                    {updatingPaymentId === payment.id && (
+                      <span className="payment-update-status" role="status">
+                        변경 중…
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {payment.sourceText && (
                   <blockquote>
                     <span>계약서 근거</span>
-                    {term.sourceText}
+                    {payment.sourceText}
                   </blockquote>
                 )}
               </article>
             ))}
           </div>
-        )}
-      </section>
-    </main>
+        </section>
+
+        <section className="detail-section" aria-labelledby="cancellations-title">
+          <div className="section-heading">
+            <h2 id="cancellations-title">취소조건</h2>
+            <span>{contract.cancellationTerms.length}건</span>
+          </div>
+          {contract.cancellationTerms.length === 0 ? (
+            <p className="muted-panel">등록된 취소조건이 없습니다.</p>
+          ) : (
+            <div className="detail-list">
+              {contract.cancellationTerms.map((term, index) => (
+                <article className="detail-item" key={`${term.summary}-${index}`}>
+                  <h3>{term.summary}</h3>
+                  {term.sourceText && (
+                    <blockquote>
+                      <span>계약서 근거</span>
+                      {term.sourceText}
+                    </blockquote>
+                  )}
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      </main>
+    </div>
   );
 }
