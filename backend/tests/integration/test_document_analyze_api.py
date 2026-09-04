@@ -34,7 +34,10 @@ _UNKNOWN_CONTENT = b"this content does not match any registered demo fallback"
 
 @contextmanager
 def _stored_document(
-    content: bytes, *, status: DocumentStatus = DocumentStatus.UPLOADED
+    content: bytes,
+    *,
+    status: DocumentStatus = DocumentStatus.UPLOADED,
+    wedding_plan_id: uuid.UUID | None = None,
 ) -> Iterator[uuid.UUID]:
     document_id = uuid.uuid4()
     storage_key = f"{document_id}.pdf"
@@ -49,7 +52,7 @@ def _stored_document(
         session.add(
             Document(
                 id=document_id,
-                wedding_plan_id=settings.demo_wedding_plan_id,
+                wedding_plan_id=wedding_plan_id or settings.demo_wedding_plan_id,
                 uploaded_by_member_id=settings.demo_member_id,
                 original_filename="contract.pdf",
                 file_url=storage_key,
@@ -164,6 +167,16 @@ def test_analyze_document_returns_404_when_missing() -> None:
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "RESOURCE_NOT_FOUND"
+
+
+def test_analyze_document_returns_404_for_other_wedding_plan() -> None:
+    """A document that belongs to another wedding plan must not be analyzable just because
+    its id is guessed, the same isolation guarantee GET /documents/{id} already enforces."""
+    with _stored_document(_DEMO_FALLBACK_CONTENT, wedding_plan_id=uuid.uuid4()) as document_id:
+        response = client.post(f"/api/documents/{document_id}/analyze")
+
+        assert response.status_code == 404
+        assert response.json()["error"]["code"] == "RESOURCE_NOT_FOUND"
 
 
 def test_start_serializes_concurrent_analyze_requests_via_row_lock() -> None:
