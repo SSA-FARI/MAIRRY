@@ -30,6 +30,7 @@ from app.domains.documents.validation import (
     read_upload_within_limit,
     resolve_expected_content_type,
 )
+from app.domains.wedding_plan.repository import WeddingPlanRepository
 from app.integrations.storage.document_storage import MinioDocumentStorage, build_storage_key
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,20 @@ logger = logging.getLogger(__name__)
 _SOURCE_VISIBLE_STATUSES = frozenset({DocumentStatus.REVIEW_REQUIRED, DocumentStatus.CONFIRMED})
 _EXTRACTION_VISIBLE_STATUSES = frozenset({DocumentStatus.REVIEW_REQUIRED, DocumentStatus.CONFIRMED})
 _ERROR_VISIBLE_STATUSES = frozenset({DocumentStatus.FAILED})
+
+
+def _resolve_document_scope(db: Session) -> tuple[uuid.UUID, uuid.UUID]:
+    """Use the current user's active plan, falling back to configured setup IDs."""
+    plans = WeddingPlanRepository(db)
+    plan = plans.get_current_for_user(settings.demo_user_id)
+    if plan is None:
+        return settings.demo_wedding_plan_id, settings.demo_member_id
+
+    member = plans.get_member_for_user(plan.id, settings.demo_user_id)
+    if member is None:
+        return settings.demo_wedding_plan_id, settings.demo_member_id
+
+    return plan.id, member.id
 
 
 class DocumentUploadService:
@@ -50,14 +65,15 @@ class DocumentUploadService:
         content = await read_upload_within_limit(file, settings.max_upload_size_bytes)
         ensure_signature_matches(content, content_type)
 
+        wedding_plan_id, member_id = _resolve_document_scope(db)
         document_id = uuid.uuid4()
         storage_key = build_storage_key(document_id, original_filename)
         file_url = self._storage.save(storage_key, content, content_type)
 
         document = Document(
             id=document_id,
-            wedding_plan_id=settings.demo_wedding_plan_id,
-            uploaded_by_member_id=settings.demo_member_id,
+            wedding_plan_id=wedding_plan_id,
+            uploaded_by_member_id=member_id,
             original_filename=original_filename,
             file_url=file_url,
             content_type=content_type,
@@ -80,7 +96,8 @@ class DocumentQueryService:
         self._repository = repository
 
     def get(self, db: Session, document_id: uuid.UUID) -> Document:
-        document = self._repository.get_by_id(db, document_id, settings.demo_wedding_plan_id)
+        wedding_plan_id, _member_id = _resolve_document_scope(db)
+        document = self._repository.get_by_id(db, document_id, wedding_plan_id)
         if document is None:
             raise AppError(
                 code=ErrorCode.RESOURCE_NOT_FOUND,
@@ -133,9 +150,8 @@ class DocumentAnalysisService:
         """Locks the row (SELECT ... FOR UPDATE) so a concurrent analyze request on the same
         document blocks until this transaction commits, instead of both racing past the
         UPLOADED/FAILED check and starting duplicate AI calls."""
-        document = self._repository.get_by_id(
-            db, document_id, settings.demo_wedding_plan_id, for_update=True
-        )
+        wedding_plan_id, _member_id = _resolve_document_scope(db)
+        document = self._repository.get_by_id(db, document_id, wedding_plan_id, for_update=True)
         if document is None:
             raise AppError(
                 code=ErrorCode.RESOURCE_NOT_FOUND,
@@ -153,8 +169,9 @@ class DocumentAnalysisService:
         """Own DB session: runs after the request/response cycle via BackgroundTasks."""
         db = SessionLocal()
         try:
+            wedding_plan_id, _member_id = _resolve_document_scope(db)
             document = await anyio.to_thread.run_sync(
-                self._repository.get_by_id, db, document_id, settings.demo_wedding_plan_id
+                self._repository.get_by_id, db, document_id, wedding_plan_id
             )
             if document is None:
                 return
