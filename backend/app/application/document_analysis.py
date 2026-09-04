@@ -28,4 +28,5 @@ def _build_document_extraction_provider() -> DocumentExtractionProvider | None:
         api_key=settings.ai_api_key,
         model=settings.ai_model,
         timeout_seconds=settings.ai_timeout_seconds,
+        base_url=settings.ai_base_url,
     )

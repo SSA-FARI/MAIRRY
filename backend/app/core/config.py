@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     demo_member_id: UUID = UUID("00000000-0000-0000-0000-000000000003")
     ai_api_key: str = ""
     ai_model: str = ""
+    ai_base_url: str = "https://api.openai.com/v1"
     object_storage_endpoint: str = "http://localhost:9000"
     # Docker Compose 안에서는 backend가 컨테이너 내부 호스트(예: minio:9000)로 object_storage_endpoint를
     # 쓰지만, presigned URL은 브라우저가 직접 열어야 하므로 host에 노출된 이 주소로 서명해야 한다.

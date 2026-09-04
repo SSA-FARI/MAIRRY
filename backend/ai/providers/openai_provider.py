@@ -21,7 +21,8 @@ from ai.common.exceptions import (
 from ai.common.types import ToolResultView
 from ai.document_extraction.schemas import DocumentExtraction
 
-OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
+OPENAI_BASE_URL = "https://api.openai.com/v1"
+OPENAI_RESPONSES_URL = f"{OPENAI_BASE_URL}/responses"
 DOCUMENT_EXTRACTION_PROMPT_PATH = (
     Path(__file__).resolve().parents[1] / "prompts" / "document-extraction.md"
 )
@@ -62,6 +63,7 @@ class OpenAiProvider:
         model: str,
         timeout_seconds: float = 45,
         *,
+        base_url: str = OPENAI_BASE_URL,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
         if not api_key.strip():
@@ -70,10 +72,15 @@ class OpenAiProvider:
             raise ValueError("OpenAI model must not be blank")
         if timeout_seconds <= 0:
             raise ValueError("OpenAI timeout must be greater than zero")
+        normalized_base_url = base_url.strip().rstrip("/")
+        parsed_base_url = httpx.URL(normalized_base_url)
+        if parsed_base_url.scheme not in {"http", "https"} or not parsed_base_url.host:
+            raise ValueError("OpenAI base URL must be an absolute HTTP(S) URL")
 
         self._api_key = api_key
         self._model = model
         self._timeout_seconds = timeout_seconds
+        self._responses_url = f"{normalized_base_url}/responses"
         self._http_client = http_client
         self._extraction_instructions = _load_prompt(DOCUMENT_EXTRACTION_PROMPT_PATH)
         self._intent_instructions = _load_prompt(INTENT_CLASSIFICATION_PROMPT_PATH)
@@ -215,7 +222,7 @@ class OpenAiProvider:
             async with asyncio.timeout(self._timeout_seconds):
                 if self._http_client is not None:
                     response = await self._http_client.post(
-                        OPENAI_RESPONSES_URL,
+                        self._responses_url,
                         headers=headers,
                         json=request_body,
                         timeout=self._timeout_seconds,
@@ -223,7 +230,7 @@ class OpenAiProvider:
                 else:
                     async with httpx.AsyncClient() as client:
                         response = await client.post(
-                            OPENAI_RESPONSES_URL,
+                            self._responses_url,
                             headers=headers,
                             json=request_body,
                             timeout=self._timeout_seconds,
