@@ -39,12 +39,14 @@ export function FinanceDashboard({
   financeError,
   displayName,
   onRetry,
+  onEditPlan,
 }: {
   plan: WeddingPlan;
   summary: FinanceSummary;
   financeError: string | null;
   displayName: string;
   onRetry: () => void;
+  onEditPlan: () => void;
 }) {
   const today = todayIso();
   const oldestOverdue = [...summary.timeline]
@@ -87,6 +89,7 @@ export function FinanceDashboard({
           summary={summary}
           shortage={shortage}
           onSimulate={() => setSimulatorOpen(true)}
+          onEditPlan={onEditPlan}
         />
         <section className="finance-analysis-grid" aria-label="자금 분석">
           <AssetAllocationChart summary={summary} />
@@ -130,11 +133,13 @@ function FinanceSummaryRow({
   summary,
   shortage,
   onSimulate,
+  onEditPlan,
 }: {
   plan: WeddingPlan;
   summary: FinanceSummary;
   shortage: number;
   onSimulate: () => void;
+  onEditPlan: () => void;
 }) {
   const weddingDay = formatDayStatus(plan.weddingDate);
   const expenseRatio = safeRatio(summary.remainingExpense, summary.availableAsset);
@@ -144,6 +149,9 @@ function FinanceSummaryRow({
         <span>결혼식</span>
         <strong>{weddingDay.label}</strong>
         <small>{formatWeddingDate(plan.weddingDate)}</small>
+        <button className="summary-simulate-button" onClick={onEditPlan}>
+          결혼일·자산 수정
+        </button>
       </article>
       <SummaryMetric label="총 자산" value={summary.availableAsset} note="확인된 전체 자산" />
       <SummaryMetric
