@@ -1,8 +1,8 @@
 import re
-from dataclasses import dataclass, field
 from typing import Any
 
 from ai.chat_agent.intent import ChatIntent
+from ai.chat_agent.schemas import IntentDecision
 
 _UUID_PATTERN = re.compile(
     r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-"
@@ -13,12 +13,6 @@ _AMOUNT_PATTERN = re.compile(
 )
 _SMALL_UNIT_MULTIPLIERS = {"": 1, "십": 10, "백": 100, "천": 1_000}
 _SMALL_NUMBER_PATTERN = re.compile(r"(?P<number>\d[\d,]*)\s*(?P<unit>천|백|십)?")
-
-
-@dataclass(frozen=True)
-class IntentDecision:
-    intent: ChatIntent
-    arguments: dict[str, Any] = field(default_factory=dict)
 
 
 def classify_message(message: str) -> IntentDecision:
@@ -32,13 +26,13 @@ def classify_message(message: str) -> IntentDecision:
                 "name": _extract_expense_name(normalized, amount_match),
                 "amount": _parse_amount(amount_match),
             }
-            return IntentDecision(ChatIntent.EXPENSE_SIMULATION, arguments)
+            return _decision(ChatIntent.EXPENSE_SIMULATION, arguments)
 
     if _contains_any(
         normalized,
         ("남은 금액", "남은 지출", "예상 잔액", "가용 자금", "가용자금", "자금 현황"),
     ):
-        return IntentDecision(ChatIntent.FINANCE_SUMMARY)
+        return _decision(ChatIntent.FINANCE_SUMMARY)
 
     if _contains_any(
         normalized,
@@ -47,16 +41,20 @@ def classify_message(message: str) -> IntentDecision:
         arguments = {"limit": 1}
         if contract_id is not None:
             arguments["contractId"] = contract_id
-        return IntentDecision(ChatIntent.SCHEDULE, arguments)
+        return _decision(ChatIntent.SCHEDULE, arguments)
 
     if _contains_any(
         normalized,
         ("계약", "취소", "환불", "위약금", "업체", "웨딩홀"),
     ):
         arguments = {"contractId": contract_id} if contract_id is not None else {}
-        return IntentDecision(ChatIntent.CONTRACT, arguments)
+        return _decision(ChatIntent.CONTRACT, arguments)
 
-    return IntentDecision(ChatIntent.UNKNOWN)
+    return _decision(ChatIntent.UNKNOWN)
+
+
+def _decision(intent: ChatIntent, arguments: dict[str, Any] | None = None) -> IntentDecision:
+    return IntentDecision(intent, arguments)
 
 
 def _contains_any(message: str, keywords: tuple[str, ...]) -> bool:

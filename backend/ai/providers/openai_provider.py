@@ -1,12 +1,14 @@
 import asyncio
 import base64
 import json
+import re
 from pathlib import Path
 from typing import Any
 
 import httpx
 from pydantic import ValidationError
 
+from ai.chat_agent.schemas import GeneratedAnswer, IntentDecision
 from ai.common.exceptions import (
     AiOutputError,
     AiProviderAuthenticationError,
@@ -16,14 +18,25 @@ from ai.common.exceptions import (
     AiProviderTimeoutError,
     AiProviderUnavailableError,
 )
+from ai.common.types import ToolResultView
 from ai.document_extraction.schemas import DocumentExtraction
 
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 DOCUMENT_EXTRACTION_PROMPT_PATH = (
     Path(__file__).resolve().parents[1] / "prompts" / "document-extraction.md"
 )
+INTENT_CLASSIFICATION_PROMPT_PATH = (
+    Path(__file__).resolve().parents[1] / "prompts" / "intent-classification.md"
+)
+ANSWER_GENERATION_PROMPT_PATH = (
+    Path(__file__).resolve().parents[1] / "prompts" / "answer-generation.md"
+)
 DOCUMENT_EXTRACTION_SCHEMA_NAME = "document_extraction"
+INTENT_CLASSIFICATION_SCHEMA_NAME = "intent_decision"
+ANSWER_GENERATION_SCHEMA_NAME = "grounded_answer"
 MAX_OUTPUT_TOKENS = 4_000
+CHAT_MAX_OUTPUT_TOKENS = 1_000
+_NUMBER_PATTERN = re.compile(r"(?<![A-Za-z])\d[\d,]*(?![A-Za-z])")
 
 _DOCUMENT_MEDIA_TYPES = {
     ".pdf": "application/pdf",
@@ -62,14 +75,16 @@ class OpenAiProvider:
         self._model = model
         self._timeout_seconds = timeout_seconds
         self._http_client = http_client
-        self._instructions = _load_extraction_instructions()
+        self._extraction_instructions = _load_prompt(DOCUMENT_EXTRACTION_PROMPT_PATH)
+        self._intent_instructions = _load_prompt(INTENT_CLASSIFICATION_PROMPT_PATH)
+        self._answer_instructions = _load_prompt(ANSWER_GENERATION_PROMPT_PATH)
 
     async def extract_document(self, file_path: Path) -> DocumentExtraction:
         document_part = await asyncio.to_thread(_build_document_part, file_path)
         request_body = {
             "model": self._model,
             "store": False,
-            "instructions": self._instructions,
+            "instructions": self._extraction_instructions,
             "input": [
                 {
                     "role": "user",
@@ -105,6 +120,91 @@ class OpenAiProvider:
         except (json.JSONDecodeError, ValidationError, TypeError) as exc:
             raise AiOutputError("AI provider returned an invalid extraction") from exc
 
+    async def classify_intent(self, message: str) -> IntentDecision:
+        normalized_message = message.strip()
+        if not normalized_message:
+            raise AiProviderInputError("Chat message must not be blank")
+
+        payload = await self._request_structured_output(
+            instructions=self._intent_instructions,
+            input_text=normalized_message,
+            schema_name=INTENT_CLASSIFICATION_SCHEMA_NAME,
+            schema=IntentDecision.model_json_schema(by_alias=True),
+        )
+        try:
+            return IntentDecision.model_validate(payload)
+        except ValidationError as exc:
+            raise AiOutputError("AI provider returned an invalid intent decision") from exc
+
+    async def generate_answer(
+        self,
+        message: str,
+        tool_result: ToolResultView,
+    ) -> str:
+        if tool_result.status != "SUCCESS" or tool_result.data is None:
+            raise AiProviderInputError("Answer generation requires a successful ToolResult")
+
+        safe_tool_result = {
+            "status": tool_result.status,
+            "toolName": tool_result.tool_name,
+            "data": tool_result.data,
+            "evidence": tool_result.evidence,
+            "calculatedAt": tool_result.calculated_at.isoformat(),
+        }
+        payload = await self._request_structured_output(
+            instructions=self._answer_instructions,
+            input_text=json.dumps(
+                {"question": message.strip(), "toolResult": safe_tool_result},
+                ensure_ascii=False,
+            ),
+            schema_name=ANSWER_GENERATION_SCHEMA_NAME,
+            schema=GeneratedAnswer.model_json_schema(by_alias=True),
+        )
+        try:
+            answer = GeneratedAnswer.model_validate(payload).answer
+        except ValidationError as exc:
+            raise AiOutputError("AI provider returned an invalid grounded answer") from exc
+        _validate_answer_grounding(answer, safe_tool_result)
+        return answer
+
+    async def _request_structured_output(
+        self,
+        *,
+        instructions: str,
+        input_text: str,
+        schema_name: str,
+        schema: dict[str, Any],
+    ) -> dict[str, Any]:
+        response = await self._send_request(
+            {
+                "model": self._model,
+                "store": False,
+                "instructions": instructions,
+                "input": [
+                    {
+                        "role": "user",
+                        "content": [{"type": "input_text", "text": input_text}],
+                    }
+                ],
+                "text": {
+                    "format": {
+                        "type": "json_schema",
+                        "name": schema_name,
+                        "strict": True,
+                        "schema": _remove_unsupported_schema_keywords(schema),
+                    }
+                },
+                "max_output_tokens": CHAT_MAX_OUTPUT_TOKENS,
+            }
+        )
+        try:
+            payload = json.loads(_extract_output_text(response))
+        except (json.JSONDecodeError, TypeError) as exc:
+            raise AiOutputError("AI provider returned invalid structured output") from exc
+        if not isinstance(payload, dict):
+            raise AiOutputError("AI provider returned invalid structured output")
+        return payload
+
     async def _send_request(self, request_body: dict[str, Any]) -> httpx.Response:
         headers = {
             "Authorization": f"Bearer {self._api_key}",
@@ -139,15 +239,30 @@ class OpenAiProvider:
         return response
 
 
-def _load_extraction_instructions() -> str:
+def _load_prompt(path: Path) -> str:
     try:
-        instructions = DOCUMENT_EXTRACTION_PROMPT_PATH.read_text(encoding="utf-8").strip()
+        instructions = path.read_text(encoding="utf-8").strip()
     except OSError as exc:
-        raise RuntimeError("Document extraction prompt could not be loaded") from exc
+        raise RuntimeError("AI prompt could not be loaded") from exc
 
     if not instructions:
-        raise RuntimeError("Document extraction prompt must not be empty")
+        raise RuntimeError("AI prompt must not be empty")
     return instructions
+
+
+def _validate_answer_grounding(answer: str, tool_result: dict[str, Any]) -> None:
+    """Reject numeric claims that are absent from the authoritative ToolResult."""
+    evidence_text = json.dumps(tool_result, ensure_ascii=False, default=str)
+    allowed_numbers = {
+        int(token.replace(",", "")) for token in _NUMBER_PATTERN.findall(evidence_text)
+    }
+    unsupported_numbers = {
+        int(token.replace(",", ""))
+        for token in _NUMBER_PATTERN.findall(answer)
+        if int(token.replace(",", "")) not in allowed_numbers
+    }
+    if unsupported_numbers:
+        raise AiOutputError("AI provider answer contains values outside the ToolResult")
 
 
 def _build_document_part(file_path: Path) -> dict[str, str]:
