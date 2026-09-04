@@ -1,6 +1,8 @@
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Protocol
 
+from ai.chat_agent.schemas import IntentDecision
+from ai.common.types import ToolResultView
 from ai.document_extraction.schemas import DocumentExtraction
 
 
@@ -13,10 +15,10 @@ class DocumentExtractionProvider(Protocol):
 class AiProvider(DocumentExtractionProvider, Protocol):
     """AI adapter boundary; implementations should normalize SDK failures."""
 
-    async def classify_intent(self, message: str) -> dict[str, Any]: ...
+    async def classify_intent(self, message: str) -> IntentDecision: ...
 
     async def generate_answer(
         self,
         message: str,
-        tool_result: dict[str, Any],
+        tool_result: ToolResultView,
     ) -> str: ...
