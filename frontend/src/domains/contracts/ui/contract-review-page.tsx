@@ -608,11 +608,7 @@ function DocumentPreviewPane({
   if (errorMessage || (previewUrl && hasLoadError)) {
     return (
       <div className="preview-error" role="alert">
-        <p>
-          {hasLoadError
-            ? "미리보기 표시 시간이 지나 원문을 열 수 없습니다."
-            : errorMessage}
-        </p>
+        <p>{hasLoadError ? "미리보기 표시 시간이 지나 원문을 열 수 없습니다." : errorMessage}</p>
         <button type="button" className="secondary-button" onClick={onRetry}>
           원문 다시 불러오기
         </button>

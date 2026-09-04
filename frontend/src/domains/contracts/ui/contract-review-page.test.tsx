@@ -95,7 +95,11 @@ describe("ContractReviewPage", () => {
       http.get(documentUrl, () => HttpResponse.json(documentResponse)),
       http.get(
         previewUrlEndpoint,
-        () => HttpResponse.json({ error: { code: "STORAGE_ERROR", message: "원문을 불러오지 못했습니다." } }, { status: 502 }),
+        () =>
+          HttpResponse.json(
+            { error: { code: "STORAGE_ERROR", message: "원문을 불러오지 못했습니다." } },
+            { status: 502 },
+          ),
         { once: true },
       ),
     );
