@@ -18,12 +18,15 @@ import {
   type ReviewValidationErrors,
 } from "../model/review-form";
 
-type PageState = "loading" | "analyzing" | "ready" | "confirmed" | "error";
+type PageState = "loading" | "analyzing" | "timeout" | "ready" | "confirmed" | "error";
 
 const emptyErrors: ReviewValidationErrors = {
   paymentFields: {},
   cancellationFields: {},
 };
+
+const ANALYSIS_POLL_INTERVAL_MS = 1000;
+const ANALYSIS_POLL_TIMEOUT_MS = 60000;
 
 export function ContractReviewPage({ documentId }: { documentId: string }) {
   return <ContractFormPage documentId={documentId} />;
@@ -46,10 +49,13 @@ function ContractFormPage({ documentId, contractId }: ContractFormPageProps) {
   const [errorMessage, setErrorMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const [isRetryingAnalysis, setIsRetryingAnalysis] = useState(false);
+  const [retryErrorMessage, setRetryErrorMessage] = useState("");
 
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const pollStartedAt = Date.now();
 
     async function load() {
       try {
@@ -71,8 +77,12 @@ function ContractFormPage({ documentId, contractId }: ContractFormPageProps) {
 
         setDocument(current);
         if (current.status === "PROCESSING" || current.status === "UPLOADED") {
+          if (Date.now() - pollStartedAt >= ANALYSIS_POLL_TIMEOUT_MS) {
+            setPageState("timeout");
+            return;
+          }
           setPageState("analyzing");
-          timer = setTimeout(() => void load(), 1000);
+          timer = setTimeout(() => void load(), ANALYSIS_POLL_INTERVAL_MS);
           return;
         }
         if (current.status === "REVIEW_REQUIRED" || current.status === "FAILED") {
@@ -123,6 +133,26 @@ function ContractFormPage({ documentId, contractId }: ContractFormPageProps) {
     });
   }
 
+  async function handleRetryAnalysis() {
+    if (documentId === undefined || isRetryingAnalysis) return;
+    setIsRetryingAnalysis(true);
+    setRetryErrorMessage("");
+    try {
+      const restarted = await analyzeDocument(documentId);
+      setDocument(restarted);
+      setPageState("analyzing");
+      setReloadKey((key) => key + 1);
+    } catch (error) {
+      setRetryErrorMessage(
+        error instanceof ApiError
+          ? error.message
+          : "분석을 다시 시작하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+      );
+    } finally {
+      setIsRetryingAnalysis(false);
+    }
+  }
+
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (!form || isSubmitting) return;
@@ -160,6 +190,30 @@ function ContractFormPage({ documentId, contractId }: ContractFormPageProps) {
             {pageState === "loading" ? "문서를 확인하고 있어요" : "AI가 계약서를 분석하고 있어요"}
           </h1>
           <p>분석이 끝나면 검수 화면이 자동으로 열립니다.</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (pageState === "timeout") {
+    return (
+      <main className="content-page review-loading">
+        <section className="state-card" role="status" aria-live="polite">
+          <h1>분석이 예상보다 오래 걸리고 있어요</h1>
+          <p>
+            서버에서는 분석을 계속 진행하고 있으며 화면에서만 잠시 기다림을 멈췄습니다. 아래
+            버튼으로 다시 확인해 주세요.
+          </p>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => setReloadKey((key) => key + 1)}
+          >
+            다시 확인하기
+          </button>
+          <Link href="/documents/upload" className="text-link">
+            나중에 확인
+          </Link>
         </section>
       </main>
     );
@@ -213,8 +267,20 @@ function ContractFormPage({ documentId, contractId }: ContractFormPageProps) {
       </header>
 
       {document?.status === "FAILED" && (
-        <aside className="warning-panel" role="status">
-          자동 분석에 실패해 빈 입력 화면을 열었습니다. 계약서를 보며 직접 입력해 주세요.
+        <aside className="warning-panel" role="alert">
+          <p>
+            <strong>자동 분석에 실패했습니다.</strong>{" "}
+            {document.error?.message ?? "계약서를 보며 직접 입력하거나 다시 시도해 주세요."}
+          </p>
+          {retryErrorMessage && <p>{retryErrorMessage}</p>}
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={isRetryingAnalysis}
+            onClick={() => void handleRetryAnalysis()}
+          >
+            {isRetryingAnalysis ? "다시 시도하는 중…" : "분석 다시 시도"}
+          </button>
         </aside>
       )}
       {document?.extraction?.warnings.map((warning) => (

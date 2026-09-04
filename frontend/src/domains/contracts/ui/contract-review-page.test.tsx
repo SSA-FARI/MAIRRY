@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { http, HttpResponse } from "msw";
+import { delay, http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ContractEditPage, ContractReviewPage } from "./contract-review-page";
@@ -38,6 +38,19 @@ const documentResponse = {
     warnings: ["총액과 지급항목 합계를 확인해 주세요."],
   },
   error: null,
+};
+
+const failedDocumentResponse = {
+  id: documentId,
+  originalName: "hall.pdf",
+  status: "FAILED",
+  analysisSource: null,
+  extraction: null,
+  error: {
+    code: "AI_PROVIDER_ERROR",
+    message: "AI 분석 서비스에 일시적인 문제가 발생했습니다.",
+    details: {},
+  },
 };
 
 const server = setupServer();
@@ -115,6 +128,162 @@ describe("ContractReviewPage", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("이미 확정된 문서입니다.");
     expect(company).toHaveValue("입력 유지 웨딩홀");
+  });
+
+  it("shows the failure reason for a FAILED document and retries analysis", async () => {
+    let getCallCount = 0;
+    server.use(
+      http.get(documentUrl, () => {
+        getCallCount += 1;
+        return HttpResponse.json(getCallCount === 1 ? failedDocumentResponse : documentResponse);
+      }),
+      http.post(`${documentUrl}/analyze`, () =>
+        HttpResponse.json(
+          { ...failedDocumentResponse, status: "PROCESSING", error: null },
+          { status: 202 },
+        ),
+      ),
+    );
+
+    const user = userEvent.setup();
+    render(<ContractReviewPage documentId={documentId} />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "AI 분석 서비스에 일시적인 문제가 발생했습니다.",
+    );
+    await user.click(screen.getByRole("button", { name: "분석 다시 시도" }));
+
+    expect(await screen.findByRole("heading", { name: "계약 내용을 확인해 주세요" })).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("hides the FAILED banner immediately after retrying, before the reload completes", async () => {
+    let getCallCount = 0;
+    server.use(
+      http.get(documentUrl, async () => {
+        getCallCount += 1;
+        if (getCallCount === 1) return HttpResponse.json(failedDocumentResponse);
+        await delay(50);
+        return HttpResponse.json({
+          ...documentResponse,
+          status: "PROCESSING",
+          analysisSource: null,
+          extraction: null,
+        });
+      }),
+      http.post(`${documentUrl}/analyze`, () =>
+        HttpResponse.json(
+          { ...failedDocumentResponse, status: "PROCESSING", error: null },
+          { status: 202 },
+        ),
+      ),
+    );
+
+    const user = userEvent.setup();
+    render(<ContractReviewPage documentId={documentId} />);
+
+    await user.click(await screen.findByRole("button", { name: "분석 다시 시도" }));
+
+    expect(screen.queryByRole("button", { name: "분석 다시 시도" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /문서를 확인하고 있어요|AI가 계약서를 분석하고 있어요/ }),
+    ).toBeVisible();
+  });
+
+  it("shows a retry error when restarting analysis fails", async () => {
+    server.use(
+      http.get(documentUrl, () => HttpResponse.json(failedDocumentResponse)),
+      http.post(`${documentUrl}/analyze`, () =>
+        HttpResponse.json(
+          { error: { code: "INVALID_STATE", message: "이미 처리 중인 문서입니다." } },
+          { status: 409 },
+        ),
+      ),
+    );
+
+    const user = userEvent.setup();
+    render(<ContractReviewPage documentId={documentId} />);
+
+    await user.click(await screen.findByRole("button", { name: "분석 다시 시도" }));
+
+    expect(await screen.findByText("이미 처리 중인 문서입니다.")).toBeVisible();
+  });
+});
+
+describe("ContractReviewPage analysis polling", () => {
+  it("polls while PROCESSING and shows the form once analysis finishes", async () => {
+    vi.useFakeTimers();
+    try {
+      let getCallCount = 0;
+      server.use(
+        http.get(documentUrl, () => {
+          getCallCount += 1;
+          return HttpResponse.json(
+            getCallCount === 1
+              ? {
+                  ...documentResponse,
+                  status: "PROCESSING",
+                  analysisSource: null,
+                  extraction: null,
+                }
+              : documentResponse,
+          );
+        }),
+      );
+
+      render(<ContractReviewPage documentId={documentId} />);
+
+      await vi.waitFor(() =>
+        expect(
+          screen.getByRole("heading", { name: "AI가 계약서를 분석하고 있어요" }),
+        ).toBeVisible(),
+      );
+
+      await vi.advanceTimersByTimeAsync(1000);
+
+      await vi.waitFor(() =>
+        expect(screen.getByRole("heading", { name: "계약 내용을 확인해 주세요" })).toBeVisible(),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows a timeout screen after 60 seconds of PROCESSING", async () => {
+    vi.useFakeTimers();
+    try {
+      server.use(
+        http.get(documentUrl, () =>
+          HttpResponse.json({
+            ...documentResponse,
+            status: "PROCESSING",
+            analysisSource: null,
+            extraction: null,
+          }),
+        ),
+      );
+
+      render(<ContractReviewPage documentId={documentId} />);
+
+      await vi.waitFor(() =>
+        expect(
+          screen.getByRole("heading", { name: "AI가 계약서를 분석하고 있어요" }),
+        ).toBeVisible(),
+      );
+
+      for (let elapsed = 0; elapsed < 61000; elapsed += 1000) {
+        await vi.advanceTimersByTimeAsync(1000);
+      }
+
+      await vi.waitFor(() =>
+        expect(
+          screen.getByRole("heading", { name: "분석이 예상보다 오래 걸리고 있어요" }),
+        ).toBeVisible(),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
