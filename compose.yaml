@@ -40,6 +40,7 @@ services:
       DEMO_USER_EMAIL: ${DEMO_USER_EMAIL:-}
       AI_API_KEY: ${AI_API_KEY:-}
       AI_MODEL: ${AI_MODEL:-}
+      AI_BASE_URL: ${AI_BASE_URL:-https://api.openai.com/v1}
       OBJECT_STORAGE_ENDPOINT: http://minio:9000
       # 브라우저가 여는 원문 미리보기 서명 URL은 컨테이너 내부 호스트(minio:9000)가 아니라
       # host에 노출된 이 주소로 서명해야 한다.
@@ -164,6 +165,7 @@ services:
       DEMO_USER_EMAIL: ""
       AI_API_KEY: ""
       AI_MODEL: ""
+      AI_BASE_URL: https://api.openai.com/v1
       OBJECT_STORAGE_ENDPOINT: http://minio:9000
       OBJECT_STORAGE_PUBLIC_ENDPOINT: http://minio:9000
       OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-mairry}

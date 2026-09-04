@@ -80,6 +80,11 @@ def test_classify_intent_uses_strict_schema_and_returns_validated_arguments() ->
 
     assert decision.intent == ChatIntent.EXPENSE_SIMULATION
     assert decision.arguments == {"name": "가전 비용", "amount": 3_000_000}
+    assert (
+        "EXPENSE_SIMULATION은 `name`과 `amount`를 반드시 함께 반환한다"
+        in captured_body["instructions"]
+    )
+    assert '`name="가전 비용"`, `amount=3000000`' in captured_body["instructions"]
     response_format = captured_body["text"]["format"]
     assert response_format["strict"] is True
     assert set(response_format["schema"]["required"]) == {
@@ -162,11 +167,13 @@ def test_blank_message_is_rejected_before_provider_request() -> None:
 
 def test_generate_answer_sends_safe_tool_result_and_accepts_grounded_values() -> None:
     captured_input = ""
+    captured_instructions = ""
 
     def handler(request: httpx.Request) -> httpx.Response:
-        nonlocal captured_input
+        nonlocal captured_input, captured_instructions
         body = json.loads(request.content)
         captured_input = body["input"][0]["content"][0]["text"]
+        captured_instructions = body["instructions"]
         return _completed_response(
             {"answer": ("남은 확정지출은 20,000,000원이고 예상 잔액은 10,000,000원입니다.")}
         )
@@ -179,6 +186,8 @@ def test_generate_answer_sends_safe_tool_result_and_accepts_grounded_values() ->
 
     assert "20,000,000원" in answer
     assert "error" not in json.loads(captured_input)["toolResult"]
+    assert "금액과 날짜만 그대로 사용한다" in captured_instructions
+    assert "비율, 차이, 개수, 순서, 현재 시각" in captured_instructions
 
 
 def test_generate_answer_rejects_number_absent_from_tool_result() -> None:

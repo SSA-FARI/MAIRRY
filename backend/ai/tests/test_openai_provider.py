@@ -120,6 +120,34 @@ def test_extract_pdf_uses_strict_schema_and_untrusted_document_boundary(
     }
 
 
+def test_custom_base_url_is_normalized_and_used(tmp_path: Path) -> None:
+    document_path = tmp_path / "contract.pdf"
+    document_path.write_bytes(b"%PDF")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert str(request.url) == "https://gateway.example/v1/responses"
+        return httpx.Response(200, json=_completed_response())
+
+    async def invoke() -> None:
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as client:
+            provider = OpenAiProvider(
+                api_key="test-api-key",
+                model="test-model",
+                base_url="https://gateway.example/v1/",
+                http_client=client,
+            )
+            await provider.extract_document(document_path)
+
+    asyncio.run(invoke())
+
+
+@pytest.mark.parametrize("base_url", ["", "gateway.example/v1", "ftp://gateway.example/v1"])
+def test_invalid_base_url_is_rejected(base_url: str) -> None:
+    with pytest.raises(ValueError, match="base URL"):
+        OpenAiProvider(api_key="test-api-key", model="test-model", base_url=base_url)
+
+
 @pytest.mark.parametrize(
     ("suffix", "media_type"),
     [(".jpg", "image/jpeg"), (".jpeg", "image/jpeg"), (".png", "image/png")],

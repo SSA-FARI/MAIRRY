@@ -80,7 +80,9 @@ try {
                 Assert-LastExitCode "Backend lint"
                 docker compose run --rm backend python -m ruff format --check app ai tests
                 Assert-LastExitCode "Backend format check"
-                docker compose run --rm backend python -m pytest -p no:cacheprovider
+                # Unit/integration tests must be deterministic and must never use a developer's
+                # live AI credentials from the root .env file.
+                docker compose run --rm -e AI_API_KEY= -e AI_MODEL= backend python -m pytest -p no:cacheprovider
                 Assert-LastExitCode "Backend tests"
             }
             finally {
