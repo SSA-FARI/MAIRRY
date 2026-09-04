@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError } from "@/shared/api/api-client";
 import { formatWon } from "@/shared/lib/money";
+import { AppHeader } from "@/shared/ui/app-header";
 import { sendChatMessage } from "../api/chat-api";
 import type {
   ChatMessage,
@@ -96,20 +97,7 @@ export function ChatPage() {
 
   return (
     <div className="chat-shell">
-      <header className="chat-header">
-        <Link className="chat-logo" href="/">
-          MAIRRY
-        </Link>
-        <nav aria-label="주요 메뉴">
-          <Link href="/">금융 대시보드</Link>
-          <Link href="/contracts">계약 관리</Link>
-          <Link href="/documents/upload">계약서 업로드</Link>
-          <Link className="active" href="/chat" aria-current="page">
-            AI 질문
-          </Link>
-        </nav>
-        <span className="chat-demo-badge">DEMO</span>
-      </header>
+      <AppHeader active="chat" />
 
       <main className="chat-main">
         <section className="chat-intro" aria-labelledby="chat-title">

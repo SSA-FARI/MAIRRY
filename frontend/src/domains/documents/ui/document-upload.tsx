@@ -93,11 +93,15 @@ export function DocumentUpload({ onUploaded }: DocumentUploadProps) {
 
   if (status === "success" && uploaded) {
     return (
-      <section role="status" style={cardStyle} data-testid="document-upload-success">
-        <p style={{ color: "var(--primary)", fontWeight: 700, marginTop: 0 }}>업로드 완료</p>
-        <p style={{ margin: "4px 0" }}>{uploaded.originalName}</p>
-        <p style={{ color: "var(--muted)", marginBottom: 16 }}>분석을 시작할 준비가 되었습니다.</p>
-        <button type="button" onClick={handleReset} style={secondaryButtonStyle}>
+      <section
+        role="status"
+        className="upload-card upload-success"
+        data-testid="document-upload-success"
+      >
+        <p className="upload-status-title">업로드 완료</p>
+        <p>{uploaded.originalName}</p>
+        <p className="muted-copy">분석을 시작할 준비가 되었습니다.</p>
+        <button type="button" onClick={handleReset} className="secondary-button">
           다른 파일 업로드
         </button>
       </section>
@@ -105,7 +109,7 @@ export function DocumentUpload({ onUploaded }: DocumentUploadProps) {
   }
 
   return (
-    <section style={cardStyle} data-testid="document-upload">
+    <section className="upload-card" data-testid="document-upload">
       <div
         role="button"
         tabIndex={0}
@@ -123,7 +127,7 @@ export function DocumentUpload({ onUploaded }: DocumentUploadProps) {
             openFilePicker();
           }
         }}
-        style={dropZoneStyle(isDragging, status === "error")}
+        className={`upload-drop-zone${isDragging ? " is-dragging" : ""}${status === "error" ? " has-error" : ""}`}
       >
         <input
           ref={inputRef}
@@ -141,47 +145,17 @@ export function DocumentUpload({ onUploaded }: DocumentUploadProps) {
             <p role="status">업로드 중입니다…</p>
           ) : (
             <>
-              <p style={{ fontWeight: 600, marginTop: 0 }}>
-                계약서 파일을 끌어다 놓거나 클릭해 선택하세요
-              </p>
-              <p style={{ color: "var(--muted)", fontSize: 14 }}>
-                PDF, JPG, PNG · 최대 {MAX_FILE_SIZE_MB}MB
-              </p>
+              <p className="upload-prompt">계약서 파일을 끌어다 놓거나 클릭해 선택하세요</p>
+              <p className="muted-copy">PDF, JPG, PNG · 최대 {MAX_FILE_SIZE_MB}MB</p>
             </>
           )}
         </div>
       </div>
       {status === "error" && errorMessage && (
-        <p role="alert" style={{ color: "var(--danger)", marginBottom: 0 }}>
+        <p role="alert" className="form-error">
           {errorMessage}
         </p>
       )}
     </section>
   );
 }
-
-const cardStyle: React.CSSProperties = {
-  background: "var(--surface)",
-  border: "1px solid var(--border)",
-  borderRadius: 18,
-  padding: 24,
-};
-
-function dropZoneStyle(isDragging: boolean, hasError: boolean): React.CSSProperties {
-  return {
-    border: `2px dashed ${hasError ? "var(--danger)" : isDragging ? "var(--primary)" : "var(--border)"}`,
-    borderRadius: 12,
-    padding: 32,
-    textAlign: "center",
-    cursor: "pointer",
-    background: isDragging ? "rgba(103, 80, 229, 0.04)" : "transparent",
-  };
-}
-
-const secondaryButtonStyle: React.CSSProperties = {
-  border: "1px solid var(--border)",
-  borderRadius: 8,
-  padding: "8px 16px",
-  background: "transparent",
-  cursor: "pointer",
-};

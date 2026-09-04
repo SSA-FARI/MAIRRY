@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useMemo, useState, type FormEvent } from "react";
 import { formatWon } from "@/shared/lib/money";
+import { AppHeader } from "@/shared/ui/app-header";
 import type { WeddingPlan } from "@/domains/wedding-plan/model/types";
 import { simulateAdditionalExpense } from "../api/finance-api";
 import {
@@ -66,22 +66,7 @@ export function FinanceDashboard({
 
   return (
     <div className="finance-shell">
-      <header className="finance-header">
-        <Link className="finance-logo" href="/">
-          MAIRRY
-        </Link>
-        <nav aria-label="주요 메뉴">
-          <a className="active" href="#dashboard">
-            금융 대시보드
-          </a>
-          <Link href="/contracts">계약 관리</Link>
-          <Link href="/documents/upload">계약서 업로드</Link>
-          <Link href="/chat">AI 질문</Link>
-        </nav>
-        <div className="finance-header-actions">
-          <span className="demo-badge">DEMO · {displayName}</span>
-        </div>
-      </header>
+      <AppHeader active="dashboard" displayName={displayName} />
 
       <main id="dashboard" className="finance-main">
         <section className="finance-intro" aria-labelledby="finance-dashboard-title">
