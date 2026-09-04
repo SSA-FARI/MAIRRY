@@ -93,6 +93,26 @@ def test_classify_intent_uses_strict_schema_and_returns_validated_arguments() ->
     }
 
 
+def test_classify_intent_preserves_camel_case_contract_id() -> None:
+    contract_id = "90af8db0-a099-40a0-bb92-720ec331a6a0"
+    provider = _provider(
+        lambda _request: _completed_response(
+            _intent_payload(
+                intent="SCHEDULE",
+                contractId=contract_id,
+                limit=1,
+            )
+        )
+    )
+    try:
+        decision = asyncio.run(provider.classify_intent("이 계약의 잔금일은 언제야?"))
+    finally:
+        asyncio.run(provider._http_client.aclose())  # type: ignore[union-attr]
+
+    assert str(decision.contract_id) == contract_id
+    assert decision.arguments == {"contractId": contract_id, "limit": 1}
+
+
 @pytest.mark.parametrize(
     "payload",
     [
@@ -153,6 +173,35 @@ def test_generate_answer_rejects_number_absent_from_tool_result() -> None:
             asyncio.run(provider.generate_answer("남은 금액은?", _finance_result()))
     finally:
         asyncio.run(provider._http_client.aclose())  # type: ignore[union-attr]
+
+
+def test_generate_answer_accepts_korean_date_without_leading_zeroes() -> None:
+    result = ToolResultView(
+        status="SUCCESS",
+        tool_name="getUpcomingPayments",
+        data={
+            "payments": [
+                {
+                    "company": "A웨딩홀",
+                    "name": "잔금",
+                    "amount": 20_000_000,
+                    "dueDate": "2026-09-04",
+                }
+            ]
+        },
+        evidence=[],
+        calculated_at=datetime(2026, 9, 4, tzinfo=UTC),
+        error=None,
+    )
+    provider = _provider(
+        lambda _request: _completed_response({"answer": "A웨딩홀 잔금일은 2026년 9월 4일입니다."})
+    )
+    try:
+        answer = asyncio.run(provider.generate_answer("잔금일은 언제야?", result))
+    finally:
+        asyncio.run(provider._http_client.aclose())  # type: ignore[union-attr]
+
+    assert answer == "A웨딩홀 잔금일은 2026년 9월 4일입니다."
 
 
 def test_generate_answer_rejects_failed_tool_result_without_request() -> None:

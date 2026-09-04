@@ -253,11 +253,13 @@ def _load_prompt(path: Path) -> str:
 def _validate_answer_grounding(answer: str, tool_result: dict[str, Any]) -> None:
     """Reject numeric claims that are absent from the authoritative ToolResult."""
     evidence_text = json.dumps(tool_result, ensure_ascii=False, default=str)
-    allowed_numbers = {token.replace(",", "") for token in _NUMBER_PATTERN.findall(evidence_text)}
+    allowed_numbers = {
+        int(token.replace(",", "")) for token in _NUMBER_PATTERN.findall(evidence_text)
+    }
     unsupported_numbers = {
-        token.replace(",", "")
+        int(token.replace(",", ""))
         for token in _NUMBER_PATTERN.findall(answer)
-        if token.replace(",", "") not in allowed_numbers
+        if int(token.replace(",", "")) not in allowed_numbers
     }
     if unsupported_numbers:
         raise AiOutputError("AI provider answer contains values outside the ToolResult")
