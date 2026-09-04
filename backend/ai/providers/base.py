@@ -12,8 +12,8 @@ class DocumentExtractionProvider(Protocol):
     async def extract_document(self, file_path: Path) -> DocumentExtraction: ...
 
 
-class AiProvider(DocumentExtractionProvider, Protocol):
-    """AI adapter boundary; implementations should normalize SDK failures."""
+class ChatProvider(Protocol):
+    """Provider boundary used by the grounded Chat application flow."""
 
     async def classify_intent(self, message: str) -> IntentDecision: ...
 
@@ -22,3 +22,7 @@ class AiProvider(DocumentExtractionProvider, Protocol):
         message: str,
         tool_result: ToolResultView,
     ) -> str: ...
+
+
+class AiProvider(DocumentExtractionProvider, ChatProvider, Protocol):
+    """Full AI adapter boundary implemented by the configured provider."""
