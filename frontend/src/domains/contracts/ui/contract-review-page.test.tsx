@@ -118,6 +118,37 @@ describe("ContractReviewPage", () => {
     );
   });
 
+  it("shows a retry option once the preview URL's expiresAt has passed", async () => {
+    server.use(
+      http.get(documentUrl, () => HttpResponse.json(documentResponse)),
+      http.get(previewUrlEndpoint, () =>
+        HttpResponse.json({ ...previewUrlResponse, expiresAt: "2020-01-01T00:00:00+09:00" }),
+      ),
+    );
+
+    render(<ContractReviewPage documentId={documentId} />);
+
+    expect(
+      await screen.findByText("미리보기 표시 시간이 지나 원문을 열 수 없습니다."),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "원문 다시 불러오기" })).toBeVisible();
+  });
+
+  it("refuses to render a non-https preview URL", async () => {
+    server.use(
+      http.get(documentUrl, () => HttpResponse.json(documentResponse)),
+      http.get(previewUrlEndpoint, () =>
+        HttpResponse.json({ ...previewUrlResponse, url: "javascript:alert(1)" }),
+      ),
+    );
+
+    render(<ContractReviewPage documentId={documentId} />);
+
+    expect(await screen.findByText("미리보기 URL을 표시할 수 없습니다.")).toBeVisible();
+    expect(screen.queryByTitle("계약서 원문 미리보기")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "새 탭에서 원문 열기" })).not.toBeInTheDocument();
+  });
+
   it("submits edited values and moves to the confirmed contract", async () => {
     let receivedBody: unknown;
     server.use(

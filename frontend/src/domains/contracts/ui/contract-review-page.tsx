@@ -27,6 +27,8 @@ const emptyErrors: ReviewValidationErrors = {
 
 const ANALYSIS_POLL_INTERVAL_MS = 1000;
 const ANALYSIS_POLL_TIMEOUT_MS = 60000;
+/** setTimeout delay가 이 값(32비트 부호있는 정수 최댓값)을 넘으면 즉시 실행되어 버린다. */
+const MAX_SAFE_TIMEOUT_MS = 2_147_483_647;
 
 export function ContractReviewPage({ documentId }: { documentId: string }) {
   return <ContractFormPage documentId={documentId} />;
@@ -580,6 +582,16 @@ function resolvePreviewKind(url: string): "pdf" | "image" | "unknown" {
   return "unknown";
 }
 
+/** presigned URL은 자사 백엔드(boto3 generate_presigned_url)만 발급하므로 https 외 스킴은
+ * 설정 오류 신호로 보고 렌더링을 거부한다. */
+function isRenderablePreviewUrl(url: string): boolean {
+  try {
+    return new URL(url).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function DocumentPreviewPane({
   previewUrl,
   isLoading,
@@ -595,7 +607,23 @@ function DocumentPreviewPane({
 
   useEffect(() => {
     setHasLoadError(false);
-  }, [previewUrl?.url]);
+    if (!previewUrl) return;
+
+    /** iframe은 403(만료)에도 onError를 내지 않으므로 expiresAt을 직접 타이머로 감시한다.
+     * setTimeout의 delay는 32비트 정수를 넘으면 즉시 실행되어 버리므로(오버플로우 시 1ms로
+     * 처리됨) 안전한 범위로 잘라 재확인을 반복한다. */
+    let timer: ReturnType<typeof setTimeout>;
+    const scheduleExpiryCheck = () => {
+      const expiresInMs = new Date(previewUrl.expiresAt).getTime() - Date.now();
+      if (expiresInMs <= 0) {
+        setHasLoadError(true);
+        return;
+      }
+      timer = setTimeout(scheduleExpiryCheck, Math.min(expiresInMs, MAX_SAFE_TIMEOUT_MS));
+    };
+    scheduleExpiryCheck();
+    return () => clearTimeout(timer);
+  }, [previewUrl]);
 
   if (isLoading && !previewUrl) {
     return (
@@ -605,10 +633,18 @@ function DocumentPreviewPane({
     );
   }
 
-  if (errorMessage || (previewUrl && hasLoadError)) {
+  const isUrlInvalid = previewUrl !== null && !isRenderablePreviewUrl(previewUrl.url);
+
+  if (errorMessage || isUrlInvalid || (previewUrl && hasLoadError)) {
     return (
       <div className="preview-error" role="alert">
-        <p>{hasLoadError ? "미리보기 표시 시간이 지나 원문을 열 수 없습니다." : errorMessage}</p>
+        <p>
+          {isUrlInvalid
+            ? "미리보기 URL을 표시할 수 없습니다."
+            : hasLoadError
+              ? "미리보기 표시 시간이 지나 원문을 열 수 없습니다."
+              : errorMessage}
+        </p>
         <button type="button" className="secondary-button" onClick={onRetry}>
           원문 다시 불러오기
         </button>
