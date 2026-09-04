@@ -1,8 +1,10 @@
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from uuid import UUID
 
 from fastapi.testclient import TestClient
 
+from app.core.config import get_settings
 from app.domains.chat.schemas import ChatResponse, Citation, SimulationCalculation
 from app.main import app
 
@@ -11,7 +13,7 @@ class StubChatOrchestrationService:
     def __init__(self, *args: object, **kwargs: object) -> None:
         pass
 
-    def process(self, message: str) -> ChatResponse:
+    async def process(self, message: str) -> ChatResponse:
         assert message == "웨딩홀 잔금일이 언제야?"
         return ChatResponse(
             answer="A웨딩홀 잔금일은 2027-04-30입니다.",
@@ -68,7 +70,7 @@ def test_chat_rejects_blank_extra_and_too_long_messages() -> None:
 
 def test_chat_calculation_omits_unrelated_nullable_fields(monkeypatch) -> None:
     class CalculationService(StubChatOrchestrationService):
-        def process(self, _message: str) -> ChatResponse:
+        async def process(self, _message: str) -> ChatResponse:
             return ChatResponse(
                 answer="예상 잔액은 7,000,000원입니다.",
                 answer_type="CALCULATION",
@@ -109,4 +111,27 @@ def test_generated_openapi_chat_shapes_are_typed() -> None:
     }
     assert schemas["ChatResponse"]["properties"]["citations"]["items"] == {
         "$ref": "#/components/schemas/Citation"
+    }
+
+
+def test_chat_returns_502_when_provider_and_fallback_are_unavailable() -> None:
+    app.dependency_overrides[get_settings] = lambda: SimpleNamespace(
+        demo_user_id=UUID(int=1),
+        ai_api_key="",
+        ai_model="",
+        ai_timeout_seconds=45,
+        enable_demo_fallback=False,
+    )
+    try:
+        response = TestClient(app).post("/api/chat", json={"message": "남은 금액 알려줘"})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 502
+    assert response.json() == {
+        "error": {
+            "code": "AI_PROVIDER_ERROR",
+            "message": "AI 답변을 생성할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+            "details": {},
+        }
     }
