@@ -2932,8 +2932,10 @@ a {
 .empty-state a {
   display: inline-block;
   margin-top: 6px;
-  color: var(--primary-dark);
   font-weight: 700;
+}
+.empty-state a:not(.primary-link) {
+  color: var(--primary-dark);
 }
 .simulator-card {
   display: grid;

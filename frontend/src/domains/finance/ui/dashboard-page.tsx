@@ -30,6 +30,7 @@ export function DashboardPage() {
   const [isLoadingFinance, setIsLoadingFinance] = useState(false);
   const [planError, setPlanError] = useState<string | null>(null);
   const [financeError, setFinanceError] = useState<string | null>(null);
+  const [isEditingPlan, setIsEditingPlan] = useState(false);
 
   const loadFinance = useCallback(async (signal?: AbortSignal) => {
     setIsLoadingFinance(true);
@@ -85,13 +86,27 @@ export function DashboardPage() {
     return <PageError message={financeError} onRetry={() => void loadFinance()} />;
   if (summary === null) return null;
   return (
-    <FinanceDashboard
-      plan={plan}
-      summary={summary}
-      financeError={financeError}
-      displayName={session?.user.displayName ?? "데모 사용자"}
-      onRetry={() => void loadFinance()}
-    />
+    <>
+      <FinanceDashboard
+        plan={plan}
+        summary={summary}
+        financeError={financeError}
+        displayName={session?.user.displayName ?? "데모 사용자"}
+        onRetry={() => void loadFinance()}
+        onEditPlan={() => setIsEditingPlan(true)}
+      />
+      {isEditingPlan && (
+        <WeddingPlanEditDialog
+          plan={plan}
+          onClose={() => setIsEditingPlan(false)}
+          onSaved={(saved) => {
+            setPlan(saved);
+            setIsEditingPlan(false);
+            void loadFinance();
+          }}
+        />
+      )}
+    </>
   );
 }
 
@@ -156,6 +171,94 @@ function WeddingPlanSetup({ onSaved }: { onSaved: (plan: WeddingPlan) => void })
         </button>
       </form>
     </main>
+  );
+}
+
+function WeddingPlanEditDialog({
+  plan,
+  onClose,
+  onSaved,
+}: {
+  plan: WeddingPlan;
+  onClose: () => void;
+  onSaved: (plan: WeddingPlan) => void;
+}) {
+  const [weddingDate, setWeddingDate] = useState(plan.weddingDate);
+  const [assetInput, setAssetInput] = useState(String(plan.availableAsset));
+  const [error, setError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const amount = parseWonInput(assetInput);
+    if (!parseCalendarDate(weddingDate)) return setError("결혼 예정일을 선택해 주세요.");
+    if (amount === null) return setError("공동 자산은 0원 이상의 안전한 정수로 입력해 주세요.");
+    setError(null);
+    setIsSaving(true);
+    try {
+      onSaved(await saveWeddingPlan({ weddingDate, availableAsset: amount }));
+    } catch (saveError) {
+      setError(messageFrom(saveError, "결혼 정보를 저장하지 못했습니다."));
+      setIsSaving(false);
+    }
+  }
+  return (
+    <div
+      className="simulator-backdrop"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section
+        className="simulator-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="wedding-plan-edit-title"
+      >
+        <header>
+          <div>
+            <span className="panel-eyebrow">WEDDING PLAN</span>
+            <h2 id="wedding-plan-edit-title">결혼일·자산 수정</h2>
+          </div>
+          <button aria-label="수정 닫기" onClick={onClose}>
+            ×
+          </button>
+        </header>
+        <form onSubmit={submit} aria-busy={isSaving}>
+          <label htmlFor="edit-wedding-date">결혼 예정일</label>
+          <input
+            id="edit-wedding-date"
+            type="date"
+            value={weddingDate}
+            onChange={(event) => setWeddingDate(event.target.value)}
+            required
+          />
+          <label htmlFor="edit-available-asset">현재 준비된 공동 현금 자산</label>
+          <div className="money-input">
+            <input
+              id="edit-available-asset"
+              inputMode="numeric"
+              value={assetInput ? Number(assetInput).toLocaleString("ko-KR") : ""}
+              onChange={(event) => setAssetInput(event.target.value.replace(/\D/g, ""))}
+              placeholder="30,000,000"
+              required
+            />
+            <span>원</span>
+          </div>
+          <p className="field-help">
+            초기 설정의 대표 공동 현금 자산이며, 향후 등록한 전체 자산 합계와는 다를 수 있어요.
+          </p>
+          {error && (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          )}
+          <button className="navy-button" disabled={isSaving}>
+            {isSaving ? "저장하고 있어요..." : "저장하기"}
+          </button>
+        </form>
+      </section>
+    </div>
   );
 }
 
