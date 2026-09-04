@@ -132,6 +132,56 @@ describe("ContractReviewPage", () => {
       await screen.findByText("미리보기 표시 시간이 지나 원문을 열 수 없습니다."),
     ).toBeVisible();
     expect(screen.getByRole("button", { name: "원문 다시 불러오기" })).toBeVisible();
+    // 시계 오차로 만료 타이머가 오탐하더라도 URL 자체는 유효할 수 있으므로, 직접 접근 경로는
+    // 남겨 둔다 (07_API_SPEC.md 기준 클라이언트-서버 시계 동기화는 이 기능의 범위 밖).
+    expect(screen.getByRole("link", { name: "새 탭에서 원문 열기" })).toHaveAttribute(
+      "href",
+      previewUrlResponse.url,
+    );
+  });
+
+  it("shows an error without freezing when expiresAt is not a valid date", async () => {
+    server.use(
+      http.get(documentUrl, () => HttpResponse.json(documentResponse)),
+      http.get(previewUrlEndpoint, () =>
+        HttpResponse.json({ ...previewUrlResponse, expiresAt: "not-a-date" }),
+      ),
+    );
+
+    render(<ContractReviewPage documentId={documentId} />);
+
+    expect(
+      await screen.findByText("미리보기 표시 시간이 지나 원문을 열 수 없습니다."),
+    ).toBeVisible();
+  });
+
+  it("shows a loading state again while a retry is in flight, instead of the stale error", async () => {
+    // 먼저 만료된 URL로 "표시 시간이 지남" 오류를 띄운 뒤, 재시도 시 응답을 지연시켜
+    // 그 사이에 이전 previewUrl이 남아 로딩 표시를 가리지 않는지 확인한다.
+    server.use(
+      http.get(documentUrl, () => HttpResponse.json(documentResponse)),
+      http.get(previewUrlEndpoint, () =>
+        HttpResponse.json({ ...previewUrlResponse, expiresAt: "2020-01-01T00:00:00+09:00" }),
+      ),
+    );
+
+    const user = userEvent.setup();
+    render(<ContractReviewPage documentId={documentId} />);
+    await screen.findByText("미리보기 표시 시간이 지나 원문을 열 수 없습니다.");
+
+    server.use(
+      http.get(previewUrlEndpoint, async () => {
+        await delay(50);
+        return HttpResponse.json(previewUrlResponse);
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "원문 다시 불러오기" }));
+
+    expect(await screen.findByText("원문을 불러오는 중입니다…")).toBeVisible();
+    expect(
+      screen.queryByText("미리보기 표시 시간이 지나 원문을 열 수 없습니다."),
+    ).not.toBeInTheDocument();
+    expect(await screen.findByTitle("계약서 원문 미리보기")).toBeVisible();
   });
 
   it("refuses to render a non-https preview URL", async () => {

@@ -129,6 +129,7 @@ function ContractFormPage({ documentId, contractId }: ContractFormPageProps) {
     let cancelled = false;
     setIsPreviewLoading(true);
     setPreviewErrorMessage("");
+    setPreviewUrl(null);
 
     getDocumentPreviewUrl(previewDocumentId)
       .then((result) => {
@@ -615,7 +616,9 @@ function DocumentPreviewPane({
     let timer: ReturnType<typeof setTimeout>;
     const scheduleExpiryCheck = () => {
       const expiresInMs = new Date(previewUrl.expiresAt).getTime() - Date.now();
-      if (expiresInMs <= 0) {
+      /** expiresAt이 파싱 불가능한 값이면 NaN이 되고, setTimeout(fn, NaN)은 0ms로 취급되어
+       * scheduleExpiryCheck가 그대로 재귀 호출되며 브라우저를 CPU 100%로 묶어 버린다. */
+      if (Number.isNaN(expiresInMs) || expiresInMs <= 0) {
         setHasLoadError(true);
         return;
       }
@@ -634,20 +637,30 @@ function DocumentPreviewPane({
   }
 
   const isUrlInvalid = previewUrl !== null && !isRenderablePreviewUrl(previewUrl.url);
+  /** hasLoadError는 (iframe onError를 신뢰할 수 없어 도입한) expiresAt 타이머 기반 추정치라
+   * 클라이언트 시계가 서버보다 빠르면 실제로는 유효한 URL을 오탐할 수 있다. URL 자체는 여전히
+   * 유효할 가능성이 높으므로, 화면 표시만 차단하고 "새 탭에서 열기"는 계속 제공해 완전히
+   * 원문 접근이 막히지 않게 한다. */
+  const isSuspectedExpiry = previewUrl !== null && !isUrlInvalid && hasLoadError;
 
-  if (errorMessage || isUrlInvalid || (previewUrl && hasLoadError)) {
+  if (errorMessage || isUrlInvalid || isSuspectedExpiry) {
     return (
       <div className="preview-error" role="alert">
         <p>
           {isUrlInvalid
             ? "미리보기 URL을 표시할 수 없습니다."
-            : hasLoadError
+            : isSuspectedExpiry
               ? "미리보기 표시 시간이 지나 원문을 열 수 없습니다."
               : errorMessage}
         </p>
         <button type="button" className="secondary-button" onClick={onRetry}>
           원문 다시 불러오기
         </button>
+        {isSuspectedExpiry && (
+          <a href={previewUrl.url} target="_blank" rel="noreferrer" className="text-link">
+            새 탭에서 원문 열기
+          </a>
+        )}
       </div>
     );
   }
