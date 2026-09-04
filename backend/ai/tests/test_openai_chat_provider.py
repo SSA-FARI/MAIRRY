@@ -113,6 +113,23 @@ def test_classify_intent_preserves_camel_case_contract_id() -> None:
     assert decision.arguments == {"contractId": contract_id, "limit": 1}
 
 
+def test_classify_intent_defaults_omitted_unused_fields_to_none() -> None:
+    provider = _provider(lambda _request: _completed_response({"intent": "FINANCE_SUMMARY"}))
+    try:
+        decision = asyncio.run(provider.classify_intent("남은 금액은 얼마야?"))
+    finally:
+        asyncio.run(provider._http_client.aclose())  # type: ignore[union-attr]
+
+    assert decision.intent == ChatIntent.FINANCE_SUMMARY
+    assert decision.arguments == {}
+    assert decision.contract_id is None
+    assert decision.from_date is None
+    assert decision.to is None
+    assert decision.limit is None
+    assert decision.name is None
+    assert decision.amount is None
+
+
 @pytest.mark.parametrize(
     "payload",
     [
@@ -168,6 +185,24 @@ def test_generate_answer_rejects_number_absent_from_tool_result() -> None:
     provider = _provider(
         lambda _request: _completed_response({"answer": "예상 잔액은 99,000,000원입니다."})
     )
+    try:
+        with pytest.raises(AiOutputError, match="outside the ToolResult"):
+            asyncio.run(provider.generate_answer("남은 금액은?", _finance_result()))
+    finally:
+        asyncio.run(provider._http_client.aclose())  # type: ignore[union-attr]
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "예상 잔액은 3,000만 원입니다.",
+        "남은 계약은 2건입니다.",
+        "가장 가까운 계약은 1순위입니다.",
+        "다음 결제 시간은 10시입니다.",
+    ],
+)
+def test_generate_answer_rejects_derived_or_reformatted_numbers(answer: str) -> None:
+    provider = _provider(lambda _request: _completed_response({"answer": answer}))
     try:
         with pytest.raises(AiOutputError, match="outside the ToolResult"):
             asyncio.run(provider.generate_answer("남은 금액은?", _finance_result()))
