@@ -83,7 +83,12 @@ class ChatOrchestrationService:
     def _classify_intent(self, message: str) -> tuple[IntentDecision, bool]:
         if self._ai_provider is not None:
             try:
-                return asyncio.run(self._ai_provider.classify_intent(message)), True
+                decision = asyncio.run(self._ai_provider.classify_intent(message))
+                logger.info(
+                    "Chat AI intent classification completed: intent=%s",
+                    decision.intent.value,
+                )
+                return decision, True
             except AiError as exc:
                 self._log_fallback("intent classification", exc)
         return self._fallback_classifier(message), False
@@ -100,6 +105,10 @@ class ChatOrchestrationService:
         except AiError as exc:
             self._log_fallback("answer generation", exc)
             return fallback_draft
+        logger.info(
+            "Chat AI answer generation completed: toolName=%s",
+            result.tool_name,
+        )
         return replace(fallback_draft, answer=answer)
 
     @staticmethod
