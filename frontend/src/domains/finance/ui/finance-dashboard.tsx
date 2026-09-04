@@ -76,7 +76,7 @@ export function FinanceDashboard({
           </a>
           <Link href="/contracts">계약 관리</Link>
           <Link href="/documents/upload">계약서 업로드</Link>
-          <span aria-disabled="true">AI 질문</span>
+          <Link href="/chat">AI 질문</Link>
         </nav>
         <div className="finance-header-actions">
           <span className="demo-badge">DEMO · {displayName}</span>
