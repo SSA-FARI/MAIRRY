@@ -27,6 +27,24 @@ Seed가 관리하는 계약·지급항목은 고정 UUID로 갱신합니다. 지
 `validate-contracts.ps1`은 기본적으로 `backend/.venv`를 사용한다. 다른 Python을 사용할 때는
 `-PythonExe`를 전달한다. DB migration은 Service의 실행과 분리해 한 번만 수행한다.
 
+## AI Provider endpoint
+
+OpenAI 공식 API는 base URL을 비워 기본 endpoint를 사용합니다.
+
+~~~env
+AI_API_KEY=sk-...
+AI_MODEL=gpt-5-mini
+AI_BASE_URL=
+~~~
+
+SSAFY GMS처럼 OpenAI-compatible API를 사용할 때는 버전 경로까지 지정합니다. 마지막 슬래시는
+있거나 없어도 동일하게 처리됩니다.
+
+~~~env
+AI_API_KEY=<GMS_API_KEY>
+AI_MODEL=gpt-5-mini
+AI_BASE_URL=https://gms.ssafy.io/gmsapi/api.openai.com/v1/
+~~~
 ## Gemini PR 리뷰
 
 `review-pr.mjs`는 GitHub API에서 해당 PR의 unified diff만 조회해 Gemini Interactions API로

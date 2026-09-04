@@ -21,7 +21,7 @@ from ai.common.exceptions import (
 from ai.common.types import ToolResultView
 from ai.document_extraction.schemas import DocumentExtraction
 
-OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
+DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
 DOCUMENT_EXTRACTION_PROMPT_PATH = (
     Path(__file__).resolve().parents[1] / "prompts" / "document-extraction.md"
 )
@@ -62,6 +62,7 @@ class OpenAiProvider:
         model: str,
         timeout_seconds: float = 45,
         *,
+        base_url: str | None = None,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
         if not api_key.strip():
@@ -71,6 +72,9 @@ class OpenAiProvider:
         if timeout_seconds <= 0:
             raise ValueError("OpenAI timeout must be greater than zero")
 
+        normalized_base_url = (base_url or "").strip().rstrip("/")
+        self._base_url = normalized_base_url or DEFAULT_OPENAI_BASE_URL
+        self._responses_url = f"{self._base_url}/responses"
         self._api_key = api_key
         self._model = model
         self._timeout_seconds = timeout_seconds
@@ -215,7 +219,7 @@ class OpenAiProvider:
             async with asyncio.timeout(self._timeout_seconds):
                 if self._http_client is not None:
                     response = await self._http_client.post(
-                        OPENAI_RESPONSES_URL,
+                        self._responses_url,
                         headers=headers,
                         json=request_body,
                         timeout=self._timeout_seconds,
@@ -223,7 +227,7 @@ class OpenAiProvider:
                 else:
                     async with httpx.AsyncClient() as client:
                         response = await client.post(
-                            OPENAI_RESPONSES_URL,
+                            self._responses_url,
                             headers=headers,
                             json=request_body,
                             timeout=self._timeout_seconds,
