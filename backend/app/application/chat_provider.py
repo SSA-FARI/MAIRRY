@@ -10,6 +10,6 @@ def build_chat_provider(configuration: Settings) -> ChatProvider | None:
     return OpenAiProvider(
         api_key=configuration.ai_api_key,
         model=configuration.ai_model,
-        base_url=configuration.ai_base_url,
         timeout_seconds=configuration.ai_timeout_seconds,
+        base_url=configuration.ai_base_url,
     )

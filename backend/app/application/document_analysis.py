@@ -27,6 +27,6 @@ def _build_document_extraction_provider() -> DocumentExtractionProvider | None:
     return OpenAiProvider(
         api_key=settings.ai_api_key,
         model=settings.ai_model,
-        base_url=settings.ai_base_url,
         timeout_seconds=settings.ai_timeout_seconds,
+        base_url=settings.ai_base_url,
     )

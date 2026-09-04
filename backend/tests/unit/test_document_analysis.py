@@ -13,7 +13,7 @@ def test_provider_is_disabled_when_credentials_are_incomplete(monkeypatch) -> No
 def test_provider_uses_runtime_ai_settings(monkeypatch) -> None:
     monkeypatch.setattr(settings, "ai_api_key", "test-api-key")
     monkeypatch.setattr(settings, "ai_model", "test-model")
-    monkeypatch.setattr(settings, "ai_base_url", "https://gms.example/v1/")
+    monkeypatch.setattr(settings, "ai_base_url", "https://gateway.example/v1/")
     monkeypatch.setattr(settings, "ai_timeout_seconds", 17)
 
     provider = _build_document_extraction_provider()
@@ -21,4 +21,4 @@ def test_provider_uses_runtime_ai_settings(monkeypatch) -> None:
     assert isinstance(provider, OpenAiProvider)
     assert provider._model == "test-model"
     assert provider._timeout_seconds == 17
-    assert provider._responses_url == "https://gms.example/v1/responses"
+    assert provider._responses_url == "https://gateway.example/v1/responses"
