@@ -1,0 +1,7 @@
+[build]
+  base = "frontend"
+  command = "pnpm --filter @mairry/web build"
+  publish = ".next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
