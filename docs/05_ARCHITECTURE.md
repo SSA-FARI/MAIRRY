@@ -127,6 +127,36 @@
 - 저장소 파일은 공개 URL로 제공하지 않는다.
 - 사용자 범위로 문서·계약 조회를 제한한다.
 - 주민등록번호·계좌번호 등 계산에 불필요한 값은 추출 스키마에서 제외한다.
+- (RAG 도입 시) 벡터 DB에 보내는 청크는 주민등록번호·연락처·계좌번호·주소 등 식별정보를 마스킹한
+  뒤 임베딩한다. Postgres의 `sourceText`(근거 인용용 원문)는 마스킹 대상이 아니다.
+
+## RAG 임베딩 확장
+
+RAG(벡터 검색 기반 근거 조회)는 `docs/00_PROJECT_PROPOSAL.md` 5-7과 `docs/06_ERD.md`의
+`document_chunks` 테이블(`embedding VECTOR(1536)`)에 이미 설계되어 있었으나, 3일 MVP 컷
+(`docs/02_MVP_SCOPE.md`, `docs/10_IMPLEMENTATION_PLAN.md`)에서 제외되어 AI 질문 기능은
+Tool Calling만으로 구현했고 현재 코드에도 `document_chunks`나 임베딩 파이프라인은 없다.
+계약서 자유 텍스트 조항(특약사항·환불/위약금·해지조건)을 벡터 검색으로 근거 제시하도록
+다시 도입할 때를 대비해, 도입 시 다음 지점에 끼워 넣는 것으로 가정한다.
+
+~~~text
+3. Backend: Document 상태를 PROCESSING으로 변경
+4. Backend → AI Adapter: 파일 분석 요청
+5. AI Adapter → Backend: 구조화 결과 + OCR/추출 텍스트 반환
+5-a. Backend: 추출 텍스트를 조항 단위로 청킹
+5-b. Backend: 청크에서 식별정보(주민등록번호·연락처·계좌번호·주소)만 마스킹
+5-c. Backend → Vector DB: 마스킹된 청크 임베딩 저장 (metadata: documentId/contractId)
+6. Backend: 추출 결과 저장, 상태를 REVIEW_REQUIRED로 변경
+~~~
+
+- 원본 업로드(2단계, MinIO 저장) 시점에는 아직 파싱된 텍스트가 없으므로 임베딩은 업로드와
+  동시가 아니라 분석(5단계) 이후에 수행한다.
+- 마스킹은 벡터 DB에 넘기는 청크에만 적용한다. Postgres에 저장하는 `sourceText`는 사용자 본인에게
+  근거로 보여주는 값이므로 원문을 그대로 보존해 인용이 깨지지 않게 한다.
+- 계약이 삭제·재검수되면 해당 documentId/contractId의 벡터도 함께 삭제한다.
+- 시드용 데이터셋 형식과 카테고리 구분은 [backend/ai/rag/datasets/README.md](../backend/ai/rag/datasets/README.md)를 따른다.
+- RAG를 다시 스코프에 포함할지, 어느 Phase에서 재도입할지는 별도로 결정한다. 마스킹 단계는
+  원래 ERD/기획에 없던 것으로, 재도입 시 함께 반영할 항목으로 제안한다.
 
 ## Fallback
 
