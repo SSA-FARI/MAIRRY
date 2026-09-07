@@ -429,10 +429,11 @@ amount는 0보다 큰 정수다. `simulatedExpectedBalance = currentExpectedBala
 
 ### POST /api/chat
 
-요청: `{"message": "웨딩홀 잔금일이 언제야?"}`
+요청: `{"message": "웨딩홀 잔금일이 언제야?", "history": []}`
 
 message는 공백이 아닌 1~2,000자 문자열이다. AI는 Backend ToolResult의 숫자, 날짜, 상태를
-변경하거나 재계산하지 않는다.
+변경하거나 재계산하지 않는다. `history`는 생략 가능한 최근 사용자 질문 배열(최대 8개)이며
+후속 질문의 검색어 재작성에만 사용하고 사용자 또는 WeddingPlan 접근 범위를 결정하지 않는다.
 
 계약 근거 응답:
 
@@ -442,10 +443,16 @@ message는 공백이 아닌 1~2,000자 문자열이다. AI는 Backend ToolResult
   "answerType": "CONTRACT",
   "citations": [{
     "contractId": "90af8db0-a099-40a0-bb92-720ec331a6a0",
+    "documentId": null,
+    "sourceType": "CONTRACT_CLAUSE",
+    "title": null,
+    "clauseTitle": null,
+    "page": null,
     "label": "A웨딩홀 · 잔금",
     "sourceText": "잔금 20,000,000원은 2027년 4월 30일까지"
   }],
-  "calculation": null
+  "calculation": null,
+  "usedRag": false
 }
 ```
 
@@ -462,11 +469,16 @@ message는 공백이 아닌 1~2,000자 문자열이다. AI는 Backend ToolResult
     "simulatedExpectedBalance": 7000000,
     "shortageAmount": 0,
     "calculatedAt": "2026-08-25T12:00:00+09:00"
-  }
+  },
+  "usedRag": false
 }
 ```
 
-answerType은 CONTRACT, CALCULATION, NOT_FOUND다. 지원하지 않는 질문과 Tool 실패에서는 임의의
+RAG 응답의 citation은 `sourceType`, 문서 `title`, `clauseTitle`, `page`, 접근 가능한
+`documentId`/`contractId`를 제공한다. 공용 FAQ·도메인 지식은 계약 링크를 만들지 않도록 두 ID가
+null이다. `usedRag`는 검색 근거를 실제 답변에 사용했을 때만 true다.
+
+answerType은 CONTRACT, CALCULATION, NOT_FOUND, RAG, MIXED다. 지원하지 않는 질문과 Tool 실패에서는 임의의
 금액/날짜를 생성하지 않는다. 요청 오류 400, AI 실패 및 대체 응답 불가 502.
 
 ## Chat 내부 Tool 계약

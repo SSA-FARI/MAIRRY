@@ -53,3 +53,5 @@ class AnswerType(StrEnum):
     CONTRACT = "CONTRACT"
     CALCULATION = "CALCULATION"
     NOT_FOUND = "NOT_FOUND"
+    RAG = "RAG"
+    MIXED = "MIXED"

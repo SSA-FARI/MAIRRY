@@ -271,8 +271,7 @@ WeddingPlan
 
 ### 특징
 
-MVP에서는 확정 생성과 목록·상세 조회만 제공한다. 계약 수정·삭제와 Payment 상태 변경 API는
-제공하지 않는다. 검수자는 반드시 해당 계약과 동일한 WeddingPlan 소속이어야 하며, 이 일치
+확정 생성과 목록·상세 조회, 계약 수정·삭제, Payment 상태 변경 API를 제공한다. 검수자는 반드시 해당 계약과 동일한 WeddingPlan 소속이어야 하며, 이 일치
 여부는 서비스 레이어에서 검증한다.
 
 ---
@@ -551,10 +550,24 @@ CancellationTerm
 | `id` | UUID | X | PK | Chunk 식별자 |
 | `wedding_plan_id` | UUID | X | FK | 소유 WeddingPlan |
 | `document_id` | UUID | X | FK | 원본 문서 |
-| `chunk_index` | INT | X | UNIQUE 조합 | Chunk 순서 |
+| `chunk_id` | VARCHAR(255) | X | UNIQUE | namespace·본문 기반 결정적 ID |
+| `content_hash` | VARCHAR(64) | X | - | 본문 SHA-256 |
+| `knowledge_type` | VARCHAR(32) | X | INDEX | CONTRACT_CLAUSE / SERVICE_FAQ / DOMAIN_KNOWLEDGE / CURATED_QA |
+| `contract_id` | UUID | O | FK | 계약 조항인 경우 확정 계약 |
+| `title` | VARCHAR(255) | X | - | 계약서 또는 공용 지식 문서명 |
+| `clause_title` | VARCHAR(255) | O | - | 조항명 |
+| `chunk_index` | INT | X | - | Chunk 순서 |
 | `page_number` | INT | O | - | 원본 페이지 |
 | `content` | TEXT | X | - | Chunk 텍스트 |
-| `embedding` | VECTOR(1536) | O | - | Embedding 벡터 |
+| `embedding` | JSONB | X | - | embedding vector |
+| `embedding_model` | VARCHAR(100) | X | INDEX | 기본 `text-embedding-3-small` |
+| `embedding_version` | VARCHAR(32) | X | INDEX | embedding profile 버전 |
+| `embedding_dimensions` | INT | X | INDEX | vector 차원, 기본 1536 |
+| `source` | VARCHAR(100) | O | - | Seed Dataset source |
+| `dataset_record_id` | VARCHAR(150) | O | - | Seed 원본의 결정적 ID |
+| `chunk_metadata` | JSONB | X | - | 필터와 citation 조립용 metadata |
+| `document_version` | INT | X | INDEX | 계약 문서 색인 버전 |
+| `active` | BOOLEAN | X | INDEX | 현재 검색 가능 버전 여부 |
 | `created_at` | TIMESTAMPTZ | X | DEFAULT now() | 생성일 |
 
 `document_chunks.wedding_plan_id`와 원본 `documents.wedding_plan_id`는 반드시 일치해야 하며, 이 일치 여부는 저장 시 서비스 레이어에서 검증한다.
@@ -611,7 +624,7 @@ Document 연결 및 CONFIRMED 변경
 ~~~
 위 과정은 하나의 트랜잭션으로 처리하며, 검증 또는 저장 중 하나라도 실패하면 전체 롤백한다.
 
-MVP에서는 확정 Contract의 Payment 추가·수정·삭제 API를 제공하지 않는다.
+확정 Contract 수정은 하위 Payment와 취소조건을 한 트랜잭션에서 교체하며 RAG 새 버전을 등록한다.
 
 ## 인덱스 및 UNIQUE
 
@@ -622,8 +635,9 @@ MVP에서는 확정 Contract의 Payment 추가·수정·삭제 API를 제공하�
 - PAYMENTS(contract_id, status, due_date)
 - CANCELLATION_TERMS(contract_id)
 - DOCUMENTS(wedding_plan_id, analysis_status, created_at)
-- DOCUMENT_CHUNKS(wedding_plan_id)
-- DOCUMENT_CHUNKS(document_id, chunk_index) UNIQUE
+- DOCUMENT_CHUNKS(knowledge_type, wedding_plan_id, active)
+- DOCUMENT_CHUNKS(contract_id, document_version)
+- DOCUMENT_CHUNKS(chunk_id) UNIQUE
 
 ## 필수 검증 테스트
 
@@ -635,5 +649,5 @@ MVP에서는 확정 Contract의 Payment 추가·수정·삭제 API를 제공하�
 ## 삭제
 
 - 확정 전 Document 삭제 시 관련 DocumentChunk도 함께 삭제한다.
-- Contract와 연결 데이터의 삭제 API는 MVP에서 제공하지 않는다.
+- Contract 삭제 시 연결 데이터와 RAG 청크를 제거하고 원본 Document는 재검수 상태로 보존한다.
 - 원본 Document 삭제 정책은 Document 담당 범위에서 관리하며 CONFIRMED 문서는 임의 삭제하지 않는다.

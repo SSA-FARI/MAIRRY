@@ -1,7 +1,12 @@
-export type AnswerType = "CONTRACT" | "CALCULATION" | "NOT_FOUND";
+export type AnswerType = "CONTRACT" | "CALCULATION" | "NOT_FOUND" | "RAG" | "MIXED";
 
 export interface Citation {
-  contractId: string;
+  contractId: string | null;
+  documentId?: string | null;
+  sourceType?: "CONTRACT_CLAUSE" | "SERVICE_FAQ" | "DOMAIN_KNOWLEDGE" | "CURATED_QA";
+  title?: string | null;
+  clauseTitle?: string | null;
+  page?: number | null;
   label: string;
   sourceText: string;
 }
@@ -28,6 +33,7 @@ export interface ChatResponse {
   answerType: AnswerType;
   citations: Citation[];
   calculation: FinanceCalculation | SimulationCalculation | null;
+  usedRag?: boolean;
 }
 
 export interface ChatMessage {

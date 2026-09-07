@@ -390,12 +390,22 @@ components:
     ChatRequest:
       type: object
       required: [message]
-      properties: {message: {type: string, minLength: 1, maxLength: 2000}}
+      properties:
+        message: {type: string, minLength: 1, maxLength: 2000}
+        history: {type: array, maxItems: 8, items: {type: string, maxLength: 2000}}
       additionalProperties: false
     Citation:
       type: object
-      required: [contractId, label, sourceText]
-      properties: {contractId: {type: string, format: uuid}, label: {type: string}, sourceText: {type: string}}
+      required: [label, sourceText]
+      properties:
+        contractId: {type: [string, "null"], format: uuid}
+        documentId: {type: [string, "null"], format: uuid}
+        sourceType: {type: string, enum: [CONTRACT_CLAUSE, SERVICE_FAQ, DOMAIN_KNOWLEDGE, CURATED_QA]}
+        title: {type: [string, "null"]}
+        clauseTitle: {type: [string, "null"]}
+        page: {type: [integer, "null"], minimum: 1}
+        label: {type: string}
+        sourceText: {type: string}
       additionalProperties: false
     Calculation:
       type: object
@@ -415,9 +425,10 @@ components:
       required: [answer, answerType, citations, calculation]
       properties:
         answer: {type: string}
-        answerType: {type: string, enum: [CONTRACT, CALCULATION, NOT_FOUND]}
+        answerType: {type: string, enum: [CONTRACT, CALCULATION, NOT_FOUND, RAG, MIXED]}
         citations: {type: array, items: {$ref: "#/components/schemas/Citation"}}
         calculation: {oneOf: [{$ref: "#/components/schemas/Calculation"}, {type: "null"}]}
+        usedRag: {type: boolean, default: false}
       additionalProperties: false
     ErrorBody:
       type: object

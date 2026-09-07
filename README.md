@@ -167,6 +167,17 @@ cd ..
 .\scripts\validate-contracts.ps1
 ```
 
+RAG migration 적용 뒤 GMS에서 발급받은 키를 `AI_API_KEY`에 설정하고 Seed Dataset을 다음처럼
+멱등 적재합니다.
+
+```powershell
+cd backend
+python -m ai.rag.ingest_seed --dataset all --dry-run
+python -m ai.rag.ingest_seed --dataset all
+```
+
+세부 구조와 운영 기준은 [docs/14_RAG_GUIDE.md](docs/14_RAG_GUIDE.md)를 참고합니다.
+
 ## 역할별 개발 범위
 
 | 담당       | 기본 작업 범위               |

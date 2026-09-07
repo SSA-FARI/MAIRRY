@@ -75,7 +75,11 @@ export function ChatPage() {
     controller.current = requestController;
 
     try {
-      const response = await sendChatMessage(normalized, requestController.signal);
+      const history = messages
+        .filter((message) => message.role === "user")
+        .map((message) => message.text)
+        .slice(-8);
+      const response = await sendChatMessage(normalized, history, requestController.signal);
       setMessages((current) => [
         ...current,
         { id: nextId.current++, role: "assistant", text: response.answer, response },
@@ -226,17 +230,38 @@ function ResponseEvidence({ response }: { response: ChatResponse }) {
         <section aria-label="계약 근거">
           <h3>계약 근거</h3>
           <div className="chat-citations">
-            {response.citations.map((citation, index) => (
-              <Link
-                className="chat-citation"
-                href={`/contracts/${citation.contractId}`}
-                key={`${citation.contractId}-${index}`}
-              >
-                <strong>{citation.label}</strong>
-                <blockquote>{citation.sourceText}</blockquote>
-                <span>계약 상세 보기 →</span>
-              </Link>
-            ))}
+            {response.citations.map((citation, index) => {
+              const content = (
+                <>
+                  <strong>{citation.label}</strong>
+                  {(citation.sourceType || citation.page) && (
+                    <small>
+                      {[citation.sourceType, citation.page ? `${citation.page}페이지` : null]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </small>
+                  )}
+                  <blockquote>{citation.sourceText}</blockquote>
+                  {citation.contractId && <span>계약 상세 보기 →</span>}
+                </>
+              );
+              return citation.contractId ? (
+                <Link
+                  className="chat-citation"
+                  href={`/contracts/${citation.contractId}`}
+                  key={`${citation.contractId}-${index}`}
+                >
+                  {content}
+                </Link>
+              ) : (
+                <article
+                  className="chat-citation"
+                  key={`${citation.sourceType ?? "source"}-${index}`}
+                >
+                  {content}
+                </article>
+              );
+            })}
           </div>
         </section>
       )}

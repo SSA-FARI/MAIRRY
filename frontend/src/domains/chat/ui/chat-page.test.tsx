@@ -80,6 +80,39 @@ describe("ChatPage", () => {
     );
   });
 
+  it("renders a RAG citation with source type and page without a fake link", async () => {
+    server.use(
+      http.post(chatUrl, () =>
+        HttpResponse.json({
+          answer: "계약서의 취소 조항을 확인했습니다.",
+          answerType: "RAG",
+          usedRag: true,
+          citations: [
+            {
+              contractId: null,
+              documentId: null,
+              sourceType: "DOMAIN_KNOWLEDGE",
+              title: "웨딩 계약 용어 안내",
+              clauseTitle: "위약금과 환불 규정",
+              page: 3,
+              label: "웨딩 계약 용어 안내 · 위약금과 환불 규정",
+              sourceText: "환불 가능 여부는 실제 계약 조항을 확인해야 합니다.",
+            },
+          ],
+          calculation: null,
+        }),
+      ),
+    );
+
+    const user = userEvent.setup();
+    render(<ChatPage />);
+    await user.type(screen.getByLabelText("AI 플래너에게 질문하기"), "위약금이 뭐야?");
+    await user.click(screen.getByRole("button", { name: "질문 보내기" }));
+
+    expect(await screen.findByText("DOMAIN_KNOWLEDGE · 3페이지")).toBeVisible();
+    expect(screen.queryByRole("link", { name: /웨딩 계약 용어 안내/ })).not.toBeInTheDocument();
+  });
+
   it("keeps the failed question and retries it", async () => {
     let calls = 0;
     server.use(

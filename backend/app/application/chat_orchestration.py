@@ -1,9 +1,12 @@
 import logging
 from collections.abc import Callable
 from dataclasses import replace
-from typing import NoReturn
+from datetime import UTC, datetime
+from typing import Any, NoReturn, TypedDict
 
 from fastapi import status
+from langgraph.graph import END, START, StateGraph
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -14,14 +17,34 @@ from ai.chat_agent.response import AnswerDraft, explain_tool_result
 from ai.common.exceptions import AiError
 from ai.common.types import ToolResultView
 from ai.providers.base import ChatProvider
+from ai.rag.routing import RagRoute, classify_rag_route, expand_queries, rewrite_question
+from ai.rag.schemas import KnowledgeType, RetrievedChunk
 from app.core.config import Settings
 from app.core.error_codes import ErrorCode
 from app.core.errors import AppError
 from app.domains.chat.schemas import ChatResponse
 from app.domains.chat.tools import ChatToolRegistry
+from app.domains.rag.service import RagSearchService
+from app.domains.wedding_plan.repository import WeddingPlanRepository
 
 IntentClassifier = Callable[[str], IntentDecision]
+PlanResolver = Callable[[Any], Any]
 logger = logging.getLogger(__name__)
+
+
+class ChatState(TypedDict, total=False):
+    question: str
+    history: list[str]
+    rewritten_question: str
+    queries: list[str]
+    route: RagRoute
+    knowledge_types: set[KnowledgeType]
+    decision: IntentDecision
+    tool_result: ToolResultView | None
+    retrieved_chunks: list[RetrievedChunk]
+    response: ChatResponse
+    use_provider: bool
+    retrieval_failed: bool
 
 
 class ChatOrchestrationService:
@@ -33,54 +56,172 @@ class ChatOrchestrationService:
         classifier: IntentClassifier = classify_message,
         provider: ChatProvider | None = None,
         tool_registry: ChatToolRegistry | None = None,
+        rag_service: RagSearchService | None = None,
+        plan_resolver: PlanResolver | None = None,
     ) -> None:
+        self._session = session
         self._configuration = configuration
         self._classifier = classifier
         self._provider = provider
         self._tools = tool_registry or ChatToolRegistry(session, configuration)
-
-    async def process(self, message: str) -> ChatResponse:
-        decision, use_provider_for_answer = await self._classify_intent(message)
-        if decision.intent == ChatIntent.UNKNOWN:
-            return self._unsupported_response()
-
-        result = await run_in_threadpool(self._execute_tool, message, decision)
-        if result is None:
-            return self._unsupported_response()
-        draft = explain_tool_result(message, result)
-        draft = await self._generate_answer(
-            message,
-            result,
-            draft,
-            use_provider=use_provider_for_answer,
+        self._rag = rag_service or RagSearchService(session, configuration)
+        self._plan_resolver = (
+            plan_resolver or WeddingPlanRepository(self._session).get_current_for_user
         )
-        return self._to_response(draft)
+        self._graph = self._build_graph()
 
-    def _execute_tool(
-        self,
-        message: str,
-        decision: IntentDecision,
-    ) -> ToolResultView | None:
-        """Resolve scoped arguments and run synchronous DB Tools in one worker thread."""
+    async def process(self, message: str, *, history: list[str] | None = None) -> ChatResponse:
+        state = await self._graph.ainvoke(
+            {
+                "question": message,
+                "history": (history or [])[-getattr(self._configuration, "rag_history_limit", 8) :],
+            }
+        )
+        return state["response"]
+
+    def _build_graph(self):
+        graph = StateGraph(ChatState)
+        graph.add_node("prepare", self._prepare)
+        graph.add_node("classify", self._classify)
+        graph.add_node("tool", self._tool)
+        graph.add_node("retrieve", self._retrieve)
+        graph.add_node("generate", self._generate)
+        graph.add_edge(START, "prepare")
+        graph.add_edge("prepare", "classify")
+        graph.add_conditional_edges(
+            "classify",
+            lambda state: state["route"].value,
+            {
+                RagRoute.TOOL.value: "tool",
+                RagRoute.RAG.value: "retrieve",
+                RagRoute.MIXED.value: "tool",
+                RagRoute.GENERAL.value: "generate",
+            },
+        )
+        graph.add_conditional_edges(
+            "tool",
+            lambda state: "retrieve" if state["route"] == RagRoute.MIXED else "generate",
+            {"retrieve": "retrieve", "generate": "generate"},
+        )
+        graph.add_edge("retrieve", "generate")
+        graph.add_edge("generate", END)
+        return graph.compile()
+
+    def _prepare(self, state: ChatState) -> dict[str, Any]:
+        rewritten = rewrite_question(state["question"], state.get("history", []))
+        return {"rewritten_question": rewritten, "queries": expand_queries(rewritten)}
+
+    async def _classify(self, state: ChatState) -> dict[str, Any]:
+        route, knowledge_types = classify_rag_route(state["rewritten_question"])
+        decision = IntentDecision(ChatIntent.UNKNOWN, {})
+        use_provider = False
+        if route in {RagRoute.TOOL, RagRoute.MIXED}:
+            decision, use_provider = await self._classify_intent(state["rewritten_question"])
+            if decision.intent == ChatIntent.UNKNOWN and route == RagRoute.TOOL:
+                route = RagRoute.GENERAL
+        elif route == RagRoute.RAG:
+            use_provider = self._provider is not None
+        return {
+            "route": route,
+            "knowledge_types": knowledge_types,
+            "decision": decision,
+            "use_provider": use_provider,
+        }
+
+    async def _tool(self, state: ChatState) -> dict[str, Any]:
+        result = await run_in_threadpool(
+            self._execute_tool, state["rewritten_question"], state["decision"]
+        )
+        return {"tool_result": result}
+
+    async def _retrieve(self, state: ChatState) -> dict[str, Any]:
+        try:
+            plan = await run_in_threadpool(
+                self._plan_resolver,
+                self._configuration.demo_user_id,
+            )
+            chunks = await run_in_threadpool(
+                self._rag.search,
+                state["queries"],
+                knowledge_types=state["knowledge_types"],
+                wedding_plan_id=plan.id if plan is not None else None,
+            )
+            return {"retrieved_chunks": chunks, "retrieval_failed": False}
+        except (SQLAlchemyError, RuntimeError, ValueError) as exc:
+            logger.warning("RAG retrieval failed: errorType=%s", type(exc).__name__, str(exc),)
+            return {"retrieved_chunks": [], "retrieval_failed": True}
+
+    async def _generate(self, state: ChatState) -> dict[str, Any]:
+        chunks = state.get("retrieved_chunks", [])
+        tool_result = state.get("tool_result")
+        if state["route"] == RagRoute.GENERAL:
+            return {"response": self._unsupported_response()}
+        tool_draft = explain_tool_result(state["question"], tool_result) if tool_result else None
+        if not chunks:
+            if state["route"] == RagRoute.RAG:
+                return {"response": self._rag_unavailable_response()}
+            if tool_draft is None:
+                return {"response": self._unsupported_response()}
+            tool_draft = await self._generate_tool_answer(
+                state["question"], tool_result, tool_draft, use_provider=state["use_provider"]
+            )
+            return {"response": self._to_response(tool_draft)}
+
+        citations = [self._citation(chunk) for chunk in chunks]
+        evidence_summary = "\n\n".join(
+            f"[{chunk.title}{' · ' + chunk.clause_title if chunk.clause_title else ''}]\n{chunk.content}"
+            for chunk in chunks[:3]
+        )
+        grounded = "확인된 근거는 다음과 같습니다.\n" + evidence_summary
+        if any(chunk.knowledge_type == KnowledgeType.CONTRACT_CLAUSE for chunk in chunks):
+            grounded += "\n\n계약 조건은 원문과 업체에 최종 확인해 주세요."
+        answer = f"{tool_draft.answer}\n\n{grounded}" if tool_draft else grounded
+        if state["use_provider"] and self._provider is not None:
+            answer = await self._generate_rag_answer(
+                state["question"],
+                chunks,
+                tool_result,
+                fallback=answer,
+            )
+        return {
+            "response": ChatResponse.model_validate(
+                {
+                    "answer": answer,
+                    "answerType": "MIXED" if tool_draft else "RAG",
+                    "citations": citations,
+                    "calculation": tool_draft.calculation if tool_draft else None,
+                    "usedRag": True,
+                }
+            )
+        }
+
+    @staticmethod
+    def _citation(chunk: RetrievedChunk) -> dict[str, Any]:
+        return {
+            "contractId": chunk.contract_id,
+            "documentId": chunk.document_id,
+            "sourceType": chunk.knowledge_type.value,
+            "title": chunk.title,
+            "clauseTitle": chunk.clause_title,
+            "page": chunk.page,
+            "label": " · ".join(filter(None, [chunk.title, chunk.clause_title])),
+            "sourceText": chunk.content,
+        }
+
+    def _execute_tool(self, message: str, decision: IntentDecision) -> ToolResultView | None:
         arguments = dict(decision.arguments)
         if (
             decision.intent in {ChatIntent.CONTRACT, ChatIntent.SCHEDULE}
             and "contractId" not in arguments
         ):
-            contract_id = self._tools.resolve_contract_id(
-                message,
-                self._configuration.demo_user_id,
-            )
+            contract_id = self._tools.resolve_contract_id(message, self._configuration.demo_user_id)
             if contract_id is not None:
                 arguments["contractId"] = str(contract_id)
-
         call = decide_tool(decision.intent, arguments)
-        if call is None:
-            return None
-        return self._tools.execute(
-            call.tool_name,
-            call.arguments,
-            self._configuration.demo_user_id,
+        return (
+            self._tools.execute(call.tool_name, call.arguments, self._configuration.demo_user_id)
+            if call is not None
+            else None
         )
 
     async def _classify_intent(self, message: str) -> tuple[IntentDecision, bool]:
@@ -88,7 +229,6 @@ class ChatOrchestrationService:
             if self._configuration.enable_demo_fallback:
                 return self._classifier(message), False
             self._raise_provider_unavailable()
-
         try:
             return await self._provider.classify_intent(message), True
         except AiError as exc:
@@ -97,7 +237,7 @@ class ChatOrchestrationService:
                 return self._classifier(message), False
             self._raise_provider_unavailable()
 
-    async def _generate_answer(
+    async def _generate_tool_answer(
         self,
         message: str,
         result: ToolResultView,
@@ -121,13 +261,50 @@ class ChatOrchestrationService:
             self._raise_provider_unavailable()
         return replace(fallback_draft, answer=answer)
 
+    async def _generate_rag_answer(
+        self,
+        message: str,
+        chunks: list[RetrievedChunk],
+        tool_result: ToolResultView | None,
+        *,
+        fallback: str,
+    ) -> str:
+        data: dict[str, Any] = {
+            "knowledge": [
+                {
+                    "sourceType": chunk.knowledge_type.value,
+                    "title": chunk.title,
+                    "clauseTitle": chunk.clause_title,
+                    "content": chunk.content,
+                }
+                for chunk in chunks
+            ]
+        }
+        if tool_result is not None and tool_result.status == "SUCCESS":
+            data["authoritativeTool"] = {
+                "toolName": tool_result.tool_name,
+                "data": tool_result.data,
+            }
+        grounded_result = ToolResultView(
+            status="SUCCESS",
+            tool_name="searchKnowledge",
+            data=data,
+            evidence=[],
+            calculated_at=(
+                tool_result.calculated_at if tool_result is not None else datetime.now(UTC)
+            ),
+            error=None,
+        )
+        assert self._provider is not None
+        try:
+            return await self._provider.generate_answer(message, grounded_result)
+        except AiError as exc:
+            self._log_provider_failure("rag-answer", exc)
+            return fallback
+
     @staticmethod
     def _log_provider_failure(stage: str, exc: AiError) -> None:
-        logger.warning(
-            "Chat AI provider failed: stage=%s errorType=%s",
-            stage,
-            type(exc).__name__,
-        )
+        logger.warning("Chat AI provider failed: stage=%s errorType=%s", stage, type(exc).__name__)
 
     @staticmethod
     def _raise_provider_unavailable() -> NoReturn:
@@ -144,6 +321,17 @@ class ChatOrchestrationService:
             answer_type="NOT_FOUND",
             citations=[],
             calculation=None,
+            used_rag=False,
+        )
+
+    @staticmethod
+    def _rag_unavailable_response() -> ChatResponse:
+        return ChatResponse(
+            answer="현재 확인할 수 있는 관련 근거가 없습니다. 계약 조건은 원문과 업체에 확인해 주세요.",
+            answer_type="NOT_FOUND",
+            citations=[],
+            calculation=None,
+            used_rag=False,
         )
 
     @staticmethod
@@ -154,5 +342,6 @@ class ChatOrchestrationService:
                 "answerType": draft.answer_type,
                 "citations": draft.citations,
                 "calculation": draft.calculation,
+                "usedRag": False,
             }
         )

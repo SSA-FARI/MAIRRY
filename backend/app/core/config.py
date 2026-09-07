@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     demo_member_id: UUID = UUID("00000000-0000-0000-0000-000000000003")
     ai_api_key: str = ""
     ai_model: str = ""
-    ai_base_url: str = "https://api.openai.com/v1"
+    ai_base_url: str = "https://gms.ssafy.io/gmsapi/api.openai.com/v1"
     object_storage_endpoint: str = "http://localhost:9000"
     # Docker Compose 안에서는 backend가 컨테이너 내부 호스트(예: minio:9000)로 object_storage_endpoint를
     # 쓰지만, presigned URL은 브라우저가 직접 열어야 하므로 host에 노출된 이 주소로 서명해야 한다.
@@ -35,6 +35,17 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000"
     enable_demo_fallback: bool = True
     ai_timeout_seconds: int = Field(default=45, gt=0)
+    rag_enabled: bool = True
+    rag_search_top_k: int = Field(default=5, ge=1, le=20)
+    rag_max_context_chunks: int = Field(default=6, ge=1, le=20)
+    rag_chunk_size: int = Field(default=900, ge=200, le=4_000)
+    rag_chunk_overlap: int = Field(default=120, ge=0, le=1_000)
+    rag_score_threshold: float = Field(default=0.12, ge=0, le=1)
+    rag_history_limit: int = Field(default=8, ge=0, le=30)
+    embedding_model_name: str = "text-embedding-3-small"
+    embedding_version: str = "v1"
+    embedding_dimensions: int = Field(default=1536, gt=0)
+    embedding_batch_size: int = Field(default=64, ge=1, le=2048)
 
     model_config = SettingsConfigDict(
         env_file=(REPOSITORY_ENV_FILE, BACKEND_ENV_FILE),

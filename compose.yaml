@@ -40,7 +40,7 @@ services:
       DEMO_USER_EMAIL: ${DEMO_USER_EMAIL:-}
       AI_API_KEY: ${AI_API_KEY:-}
       AI_MODEL: ${AI_MODEL:-}
-      AI_BASE_URL: ${AI_BASE_URL:-https://api.openai.com/v1}
+      AI_BASE_URL: ${AI_BASE_URL:-https://gms.ssafy.io/gmsapi/api.openai.com/v1}
       AI_TIMEOUT_SECONDS: ${AI_TIMEOUT_SECONDS:-45}
       OBJECT_STORAGE_ENDPOINT: http://minio:9000
       # 브라우저가 여는 원문 미리보기 서명 URL은 컨테이너 내부 호스트(minio:9000)가 아니라
@@ -51,6 +51,16 @@ services:
       OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-miniosecret}
       CORS_ORIGINS: http://localhost:3000
       ENABLE_DEMO_FALLBACK: "true"
+      RAG_ENABLED: ${RAG_ENABLED:-true}
+      RAG_SEARCH_TOP_K: ${RAG_SEARCH_TOP_K:-5}
+      RAG_MAX_CONTEXT_CHUNKS: ${RAG_MAX_CONTEXT_CHUNKS:-6}
+      RAG_CHUNK_SIZE: ${RAG_CHUNK_SIZE:-900}
+      RAG_CHUNK_OVERLAP: ${RAG_CHUNK_OVERLAP:-120}
+      RAG_SCORE_THRESHOLD: ${RAG_SCORE_THRESHOLD:-0.12}
+      EMBEDDING_MODEL_NAME: ${EMBEDDING_MODEL_NAME:-text-embedding-3-small}
+      EMBEDDING_VERSION: ${EMBEDDING_VERSION:-v1}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1536}
+      EMBEDDING_BATCH_SIZE: ${EMBEDDING_BATCH_SIZE:-64}
     ports:
       - "8000:8000"
     volumes:
@@ -175,6 +185,10 @@ services:
       OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-miniosecret}
       CORS_ORIGINS: http://frontend-e2e:3000
       ENABLE_DEMO_FALLBACK: "true"
+      RAG_ENABLED: ${RAG_ENABLED:-true}
+      EMBEDDING_MODEL_NAME: text-embedding-3-small
+      EMBEDDING_VERSION: v1
+      EMBEDDING_DIMENSIONS: 1536
     depends_on:
       postgres-e2e:
         condition: service_healthy

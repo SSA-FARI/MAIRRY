@@ -1,14 +1,19 @@
 from datetime import datetime
+from typing import Annotated
 from uuid import UUID
 
 from pydantic import Field, field_validator
 
+from ai.rag.schemas import KnowledgeType
 from app.core.enums import AnswerType
 from app.core.schema import ApiModel
 
 
 class ChatRequest(ApiModel):
     message: str = Field(min_length=1, max_length=2_000)
+    history: list[Annotated[str, Field(max_length=2_000)]] = Field(
+        default_factory=list, max_length=8
+    )
 
     @field_validator("message")
     @classmethod
@@ -19,7 +24,12 @@ class ChatRequest(ApiModel):
 
 
 class Citation(ApiModel):
-    contract_id: UUID
+    contract_id: UUID | None = None
+    document_id: UUID | None = None
+    source_type: KnowledgeType = KnowledgeType.CONTRACT_CLAUSE
+    title: str | None = None
+    clause_title: str | None = None
+    page: int | None = Field(default=None, ge=1)
     label: str
     source_text: str
 
@@ -46,3 +56,4 @@ class ChatResponse(ApiModel):
     answer_type: AnswerType
     citations: list[Citation]
     calculation: FinanceCalculation | SimulationCalculation | None
+    used_rag: bool = False
