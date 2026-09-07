@@ -80,11 +80,7 @@ export function ChatPage() {
     controller.current = requestController;
 
     try {
-      const response = await sendChatMessage(
-        normalized,
-        conversationId,
-        requestController.signal,
-      );
+      const response = await sendChatMessage(normalized, conversationId, requestController.signal);
       if (response.conversationId) {
         setConversationId(response.conversationId);
         window.localStorage.setItem(CONVERSATION_STORAGE_KEY, response.conversationId);

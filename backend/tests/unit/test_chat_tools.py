@@ -171,6 +171,7 @@ def test_chat_06_10_simulation_is_forwarded_and_deterministic() -> None:
     assert first == second
     assert calls == [(3_000_000, USER_ID), (3_000_000, USER_ID)]
     assert first.data is not None
+    assert first.data["additionalExpense"] == 3_000_000
     assert first.data["simulatedExpectedBalance"] == 7_000_000
 
 

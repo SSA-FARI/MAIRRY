@@ -12,6 +12,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.orm import Session
 
+from ai.rag.schemas import KnowledgeType, RetrievedChunk
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
 from app.core.enums import (
@@ -66,6 +67,8 @@ def _configuration(database_url: str, user_id: uuid.UUID) -> Settings:
         demo_user_login_id=f"chat-{user_id}",
         demo_user_display_name="Chat Demo",
         demo_user_email=None,
+        ai_api_key="",
+        ai_model="",
     )
 
 
@@ -202,6 +205,7 @@ def _cleanup(engine: Engine, user_ids: list[uuid.UUID]) -> None:
 
 def test_chat_golden_path_uses_owned_contract_and_finance_data(
     database_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     user_id = uuid.uuid4()
     other_user_id = uuid.uuid4()
@@ -214,6 +218,10 @@ def test_chat_golden_path_uses_owned_contract_and_finance_data(
             amount=20_000_000,
             source_text="잔금 20,000,000원은 2099년 4월 30일까지",
         )
+        created_contract = session.get(Contract, contract_id)
+        assert created_contract is not None
+        document_id = created_contract.document_id
+        plan_id = created_contract.wedding_plan_id
         _create_plan_with_contract(
             session,
             other_user_id,
@@ -222,6 +230,46 @@ def test_chat_golden_path_uses_owned_contract_and_finance_data(
             source_text="다른 사용자의 비공개 근거",
         )
         session.commit()
+        finance_snapshot = (
+            tuple(session.scalars(select(Asset.amount).where(Asset.wedding_plan_id == plan_id))),
+            tuple(
+                session.scalars(
+                    select(Payment.amount)
+                    .join(Contract)
+                    .where(Contract.wedding_plan_id == plan_id)
+                    .order_by(Payment.id)
+                )
+            ),
+        )
+
+    rag_calls: list[list[str]] = []
+
+    def search_without_external_embedding(
+        _service,
+        queries: list[str],
+        **_kwargs: object,
+    ) -> list[RetrievedChunk]:
+        rag_calls.append(queries)
+        return [
+            RetrievedChunk(
+                chunk_id="a" * 64,
+                content_hash="b" * 64,
+                content="예식 90일 전까지 계약금을 환급합니다.",
+                knowledge_type=KnowledgeType.CONTRACT_CLAUSE,
+                title="A웨딩홀 계약서",
+                clause_title="취소·환불 조건",
+                page=None,
+                chunk_index=0,
+                score=1.0,
+                document_id=document_id,
+                contract_id=contract_id,
+            )
+        ]
+
+    monkeypatch.setattr(
+        "app.application.chat_orchestration.RagSearchService.search",
+        search_without_external_embedding,
+    )
 
     _override_dependencies(database_engine, _configuration(str(database_engine.url), user_id))
     client = TestClient(app)
@@ -241,6 +289,21 @@ def test_chat_golden_path_uses_owned_contract_and_finance_data(
         assert finance.json()["calculation"]["expectedBalance"] == 10_000_000
         assert simulation.json()["calculation"]["simulatedExpectedBalance"] == 7_000_000
         assert cancellation.json()["citations"][0]["sourceText"].startswith("예식 90일 전")
+        assert len(rag_calls) == 1
+        with Session(database_engine) as session:
+            assert finance_snapshot == (
+                tuple(
+                    session.scalars(select(Asset.amount).where(Asset.wedding_plan_id == plan_id))
+                ),
+                tuple(
+                    session.scalars(
+                        select(Payment.amount)
+                        .join(Contract)
+                        .where(Contract.wedding_plan_id == plan_id)
+                        .order_by(Payment.id)
+                    )
+                ),
+            )
     finally:
         app.dependency_overrides.clear()
         _cleanup(database_engine, [user_id, other_user_id])

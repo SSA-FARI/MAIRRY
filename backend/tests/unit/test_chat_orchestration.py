@@ -179,6 +179,51 @@ def test_chat_02_05_finance_answer_and_calculation_use_identical_values() -> Non
     assert response.calculation.remaining_expense == 20_000_000
 
 
+def test_simulation_phrase_executes_finance_tool_without_rag() -> None:
+    result = ToolResultView(
+        status="SUCCESS",
+        tool_name="simulateAdditionalExpense",
+        data={
+            "name": "가전 비용",
+            "additionalExpense": 3_000_000,
+            "currentExpectedBalance": 10_000_000,
+            "simulatedExpectedBalance": 7_000_000,
+            "shortageAmount": 0,
+        },
+        evidence=[],
+        calculated_at=NOW,
+        error=None,
+    )
+    registry = StubRegistry(result)
+
+    class RagMustNotRun:
+        def search(self, *_args: object, **_kwargs: object) -> list[object]:
+            raise AssertionError("finance simulation must not invoke RAG")
+
+    service = ChatOrchestrationService(
+        SimpleNamespace(),
+        SimpleNamespace(
+            demo_user_id=USER_ID,
+            enable_demo_fallback=True,
+            rag_history_limit=8,
+        ),
+        tool_registry=registry,  # type: ignore[arg-type]
+        rag_service=RagMustNotRun(),  # type: ignore[arg-type]
+    )
+
+    response = asyncio.run(service.process("가전 비용 300만 원을 추가하면 괜찮아?"))
+
+    assert registry.calls == [
+        (
+            "simulateAdditionalExpense",
+            {"name": "가전 비용", "amount": 3_000_000},
+            USER_ID,
+        )
+    ]
+    assert response.calculation is not None
+    assert response.calculation.simulated_expected_balance == 7_000_000
+
+
 def test_contract_question_resolves_single_contract_before_tool_call() -> None:
     result = ToolResultView(
         status="SUCCESS",

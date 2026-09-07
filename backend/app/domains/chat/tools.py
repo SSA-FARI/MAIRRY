@@ -261,7 +261,11 @@ class ChatToolRegistry:
         if isinstance(amount, bool) or not isinstance(amount, int) or amount <= 0:
             raise ValueError("amount must be a positive integer")
         simulation = self._finance.simulate(amount, user_id=user_id)
-        data = {"name": name.strip(), **simulation.model_dump(mode="json", by_alias=True)}
+        data = {
+            "name": name.strip(),
+            "additionalExpense": amount,
+            **simulation.model_dump(mode="json", by_alias=True),
+        }
         return self._success("simulateAdditionalExpense", data, [])
 
     def _success(

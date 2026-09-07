@@ -59,12 +59,14 @@ class FakeChatRepository:
         self.added_messages.append(message)
 
 
-def _service(repository: FakeChatRepository, *, plan_id: UUID = PLAN_ID):
+def _service(repository: FakeChatRepository, *, plan_id: UUID | None = PLAN_ID):
     service = ChatConversationService.__new__(ChatConversationService)
     service._session = FakeSession()
     service._repository = repository
     service._plans = SimpleNamespace(
-        get_current_for_user=lambda _user_id: SimpleNamespace(id=plan_id)
+        get_current_for_user=lambda _user_id: (
+            SimpleNamespace(id=plan_id) if plan_id is not None else None
+        )
     )
     return service
 
@@ -132,6 +134,29 @@ def test_conversation_rejects_other_user_or_other_current_plan() -> None:
 
     with pytest.raises(AppError):
         _service(repository, plan_id=UUID(int=99)).begin_turn(
+            conversation_id=CONVERSATION_ID,
+            user_id=USER_ID,
+            message="이전 대화 보여줘",
+            history_limit=8,
+        )
+
+
+def test_new_chat_without_plan_returns_an_empty_turn_without_writing() -> None:
+    repository = FakeChatRepository()
+
+    turn = _service(repository, plan_id=None).begin_turn(
+        conversation_id=None,
+        user_id=USER_ID,
+        message="남은 금액 알려줘",
+        history_limit=8,
+    )
+
+    assert turn is None
+    assert repository.conversation is None
+    assert repository.added_messages == []
+
+    with pytest.raises(AppError):
+        _service(repository, plan_id=None).begin_turn(
             conversation_id=CONVERSATION_ID,
             user_id=USER_ID,
             message="이전 대화 보여줘",

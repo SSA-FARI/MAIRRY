@@ -175,3 +175,23 @@ def test_chat_returns_502_when_provider_and_fallback_are_unavailable() -> None:
             "details": {},
         }
     }
+
+
+def test_new_chat_without_plan_returns_guidance_without_numbers(monkeypatch) -> None:
+    class MissingPlanConversationService(StubChatConversationService):
+        def begin_turn(self, **_kwargs: object) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "app.domains.chat.router.ChatConversationService",
+        MissingPlanConversationService,
+    )
+
+    response = TestClient(app).post("/api/chat", json={"message": "남은 금액 알려줘"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["answerType"] == "NOT_FOUND"
+    assert payload["calculation"] is None
+    assert payload["citations"] == []
+    assert not any(character.isdigit() for character in payload["answer"])

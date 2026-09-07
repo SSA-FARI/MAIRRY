@@ -29,6 +29,16 @@ async def chat(
             message=payload.message,
             history_limit=getattr(configuration, "rag_history_limit", 8),
         )
+        if turn is None:
+            return ChatResponse(
+                answer=(
+                    "아직 웨딩 계획이 없어 자금 정보를 확인할 수 없습니다. "
+                    "먼저 결혼 예정일과 초기 자산을 설정해 주세요."
+                ),
+                answer_type="NOT_FOUND",
+                citations=[],
+                calculation=None,
+            )
         service = ChatOrchestrationService(
             db,
             configuration,

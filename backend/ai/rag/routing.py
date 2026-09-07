@@ -1,5 +1,6 @@
 from enum import StrEnum
 
+from ai.chat_agent.fallback import looks_like_expense_simulation
 from ai.rag.schemas import KnowledgeType
 
 
@@ -37,6 +38,8 @@ _INJECTION_WORDS = (
 
 
 def classify_rag_route(question: str) -> tuple[RagRoute, set[KnowledgeType]]:
+    if looks_like_expense_simulation(question):
+        return RagRoute.TOOL, set()
     has_clause = any(word in question for word in _CLAUSE_WORDS)
     has_finance = any(word in question for word in _FINANCE_WORDS)
     if has_clause and has_finance:

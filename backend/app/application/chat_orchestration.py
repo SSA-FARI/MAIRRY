@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from ai.chat_agent.agent import decide_tool
-from ai.chat_agent.fallback import IntentDecision, classify_message
+from ai.chat_agent.fallback import IntentDecision, classify_message, looks_like_expense_simulation
 from ai.chat_agent.intent import ChatIntent
 from ai.chat_agent.response import AnswerDraft, explain_tool_result
 from ai.common.exceptions import AiError
@@ -157,7 +157,10 @@ class ChatOrchestrationService:
         decision = IntentDecision(ChatIntent.UNKNOWN, {})
         use_provider = False
         if route in {RagRoute.TOOL, RagRoute.MIXED}:
-            decision, use_provider = await self._classify_intent(state["rewritten_question"])
+            if looks_like_expense_simulation(state["rewritten_question"]):
+                decision = self._classifier(state["rewritten_question"])
+            else:
+                decision, use_provider = await self._classify_intent(state["rewritten_question"])
             if decision.intent == ChatIntent.UNKNOWN and route == RagRoute.TOOL:
                 route = RagRoute.GENERAL
         elif route == RagRoute.RAG:
@@ -259,6 +262,8 @@ class ChatOrchestrationService:
         chunks = state.get("retrieved_chunks", [])
         tool_result = state.get("tool_result")
         if state["route"] == RagRoute.GENERAL:
+            if looks_like_expense_simulation(state["question"]):
+                return {"response": self._invalid_simulation_response()}
             return {"response": self._unsupported_response()}
         tool_draft = explain_tool_result(state["question"], tool_result) if tool_result else None
         if not chunks:
@@ -483,6 +488,16 @@ class ChatOrchestrationService:
     def _rag_unavailable_response() -> ChatResponse:
         return ChatResponse(
             answer="현재 확인할 수 있는 관련 근거가 없습니다. 계약 조건은 원문과 업체에 확인해 주세요.",
+            answer_type="NOT_FOUND",
+            citations=[],
+            calculation=None,
+            used_rag=False,
+        )
+
+    @staticmethod
+    def _invalid_simulation_response() -> ChatResponse:
+        return ChatResponse(
+            answer="추가 지출 항목과 하나의 정확한 원 단위 금액을 입력해 주세요.",
             answer_type="NOT_FOUND",
             citations=[],
             calculation=None,

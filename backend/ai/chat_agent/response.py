@@ -138,9 +138,8 @@ def _explain_simulation(_question: str, result: ToolResultView) -> AnswerDraft:
     data = result.data
     shortage = int(data["shortageAmount"])
     shortage_text = "부족액은 없습니다" if shortage == 0 else f"부족액은 {_won(shortage)}원입니다"
-    additional_amount = int(data["currentExpectedBalance"]) - int(data["simulatedExpectedBalance"])
     answer = (
-        f"{data['name']} {_won(additional_amount)}원을 추가하면 "
+        f"{data['name']} {_won(data['additionalExpense'])}원을 추가하면 "
         f"예상 잔액은 {_won(data['simulatedExpectedBalance'])}원이며, {shortage_text}."
     )
     return AnswerDraft(

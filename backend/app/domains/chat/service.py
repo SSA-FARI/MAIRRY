@@ -28,9 +28,11 @@ class ChatConversationService:
 
     def begin_turn(
         self, *, conversation_id: UUID | None, user_id: UUID, message: str, history_limit: int
-    ) -> ConversationTurn:
+    ) -> ConversationTurn | None:
         plan = self._plans.get_current_for_user(user_id)
         if plan is None:
+            if conversation_id is None:
+                return None
             raise AppError(ErrorCode.RESOURCE_NOT_FOUND, "현재 웨딩 계획을 찾을 수 없습니다.", 404)
         if conversation_id is None:
             conversation = ChatConversation(

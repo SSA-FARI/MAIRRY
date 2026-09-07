@@ -13,6 +13,7 @@ _AMOUNT_PATTERN = re.compile(
 )
 _SMALL_UNIT_MULTIPLIERS = {"": 1, "십": 10, "백": 100, "천": 1_000}
 _SMALL_NUMBER_PATTERN = re.compile(r"(?P<number>\d[\d,]*)\s*(?P<unit>천|백|십)?")
+_SIMULATION_ACTIONS = ("추가", "더 쓰", "더하", "구매", "사도", "지출", "사용")
 
 
 def classify_message(message: str) -> IntentDecision:
@@ -26,12 +27,19 @@ def classify_message(message: str) -> IntentDecision:
         arguments = {"contractId": contract_id} if contract_id is not None else {}
         return _decision(ChatIntent.CONTRACT_PAYMENT, arguments)
 
-    if _contains_any(normalized, ("추가", "더 쓰", "구매", "사도", "지출")):
-        amount_match = _AMOUNT_PATTERN.search(normalized)
-        if amount_match is not None:
+    if looks_like_expense_simulation(normalized):
+        amount_matches = list(_AMOUNT_PATTERN.finditer(normalized))
+        if len(amount_matches) == 1:
+            amount_match = amount_matches[0]
+            try:
+                amount = _parse_amount(amount_match)
+            except ValueError:
+                return _decision(ChatIntent.UNKNOWN)
+            if amount <= 0 or _has_negative_sign(normalized, amount_match):
+                return _decision(ChatIntent.UNKNOWN)
             arguments: dict[str, Any] = {
                 "name": _extract_expense_name(normalized, amount_match),
-                "amount": _parse_amount(amount_match),
+                "amount": amount,
             }
             return _decision(ChatIntent.EXPENSE_SIMULATION, arguments)
 
@@ -66,6 +74,23 @@ def _decision(intent: ChatIntent, arguments: dict[str, Any] | None = None) -> In
 
 def _contains_any(message: str, keywords: tuple[str, ...]) -> bool:
     return any(keyword in message for keyword in keywords)
+
+
+def looks_like_expense_simulation(message: str) -> bool:
+    """Identify hypothetical spending language before intent/tool selection."""
+    normalized = " ".join(message.strip().split())
+    if not _contains_any(normalized, _SIMULATION_ACTIONS):
+        return False
+    if _AMOUNT_PATTERN.search(normalized) or re.search(r"(?:NaN|Infinity)\s*원", normalized):
+        return True
+    return _contains_any(
+        normalized,
+        ("추가하면", "추가할", "더 쓰", "더하면", "지출하면", "사용하면", "계산해"),
+    )
+
+
+def _has_negative_sign(message: str, amount_match: re.Match[str]) -> bool:
+    return message[: amount_match.start()].rstrip().endswith("-")
 
 
 def _extract_contract_id(message: str) -> str | None:
@@ -104,5 +129,5 @@ def _parse_small_number(expression: str) -> int:
 def _extract_expense_name(message: str, amount_match: re.Match[str]) -> str:
     prefix = message[: amount_match.start()].strip(" ,")
     prefix = re.sub(r"^(만약|혹시|추가로)\s+", "", prefix)
-    prefix = re.sub(r"(에|으로|로)$", "", prefix).strip()
+    prefix = re.sub(r"(에|으로|로|을|를)$", "", prefix).strip()
     return prefix or "추가 지출"
