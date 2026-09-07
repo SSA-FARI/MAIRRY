@@ -11,12 +11,14 @@ RAG 도입 시 파이프라인이 어디에 끼워지는지, 사용자 업로드
 
 ## 파일 구성
 
-| 파일 | 용도 | 우선순위 |
-|---|---|---|
-| [contract-clause-chunks.jsonl](contract-clause-chunks.jsonl) | 계약서 원문 자유 텍스트 조항(특약사항·환불/위약금·해지조건) 청크. 실제 서비스에서는 사용자가 업로드한 계약서마다 런타임으로 생성되는 컬렉션이며, 이 파일은 데모/개발용 샘플이다 | 높음 |
-| [domain-glossary.jsonl](domain-glossary.jsonl) | 웨딩홀·스드메 업계 계약 용어 및 관행 지식베이스 | 높음 |
-| [service-faq.jsonl](service-faq.jsonl) | MAIRRY 서비스 사용법(회원가입, 업로드, 검수·확정, 대시보드 등) FAQ | 중간 |
-| [consultation-history.jsonl](consultation-history.jsonl) | 과거 상담 질문-답변 예시. MVP 단계에서는 데이터가 적어 우선순위 낮음 | 낮음 |
+| 파일(JSONL) | 미리보기(표) | 용도 | 우선순위 |
+|---|---|---|---|
+| [contract-clause-chunks.jsonl](contract-clause-chunks.jsonl) | [contract-clause-chunks.md](contract-clause-chunks.md) | 계약서 원문 자유 텍스트 조항(특약사항·환불/위약금·해지조건) 청크. 실제 서비스에서는 사용자가 업로드한 계약서마다 런타임으로 생성되는 컬렉션이며, 이 파일은 데모/개발용 샘플이다 | 높음 |
+| [domain-glossary.jsonl](domain-glossary.jsonl) | [domain-glossary.md](domain-glossary.md) | 웨딩홀·스드메 업계 계약 용어 및 관행 지식베이스 | 높음 |
+| [service-faq.jsonl](service-faq.jsonl) | [service-faq.md](service-faq.md) | MAIRRY 서비스 사용법(회원가입, 업로드, 검수·확정, 대시보드 등) FAQ | 중간 |
+| [consultation-history.jsonl](consultation-history.jsonl) | [consultation-history.md](consultation-history.md) | 과거 상담 질문-답변 예시. MVP 단계에서는 데이터가 적어 우선순위 낮음 | 낮음 |
+
+각 `.md` 파일은 같은 이름 `.jsonl`의 내용을 표로만 옮긴 미리보기이며, 임베딩 파이프라인이 실제로 읽어 들이는 대상은 아니다. 데이터를 수정할 때는 `.jsonl` 원본을 먼저 고치고, 표에도 동일한 내용을 반영해야 두 파일이 어긋나지 않는다.
 
 ## 공통 스키마 (JSONL, 1행 = 1청크)
 
