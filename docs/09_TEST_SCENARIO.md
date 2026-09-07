@@ -152,6 +152,21 @@ Tool 결과: dueDate=2027-04-30, amount=20000000
 - 서버 로그에 계약 원문과 비밀키가 출력되지 않는다.
 - 객체 스토리지 파일은 공개 접근되지 않는다.
 
+## 대화 문맥·RAG Seed 확인
+
+- 첫 질문 `라온벨 웨딩컨벤션 해지 수수료 알려줘`의 응답 `conversationId`를 후속 질문
+  `위 계약 예약금 얼마야?`에 보내면 같은 계약의 Payment 계약금 amount/status를 반환한다.
+- `그 예약금은 지금 취소하면 어떻게 돼?`는 같은 계약금 Tool 결과와 같은 contractId의 관련 취소
+  청크만 사용한다.
+- 업체명을 새로 명시한 질문은 이전 참조 계약보다 새 업체를 우선한다.
+- 새 대화는 이전 conversationId와 참조 계약을 사용하지 않는다.
+- 다른 사용자 또는 다른 현재 WeddingPlan의 conversationId는 404이며 메시지와 계약 문맥이
+  노출되지 않는다.
+- 서버 첫 시작은 Seed 4종을 적재하고, 두 번째 시작은 변경 없는 레코드를
+  `skippedUnchanged`로 기록하며 embedding API를 다시 호출하지 않는다.
+- 시작 로그에는 embedding model/version/dimensions 및 vector 개수만 있고 질문·청크 원문,
+  API key, vector 배열은 없다.
+
 ## 데모 전 체크리스트
 
 - [ ] 배포 URL에서 초기 설정부터 질문까지 완료

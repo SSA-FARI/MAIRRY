@@ -3,12 +3,12 @@ import type { ChatResponse } from "../model/types";
 
 export function sendChatMessage(
   message: string,
-  history: string[] = [],
+  conversationId?: string | null,
   signal?: AbortSignal,
 ): Promise<ChatResponse> {
   return apiClient<ChatResponse>("/chat", {
     method: "POST",
-    body: JSON.stringify(history.length > 0 ? { message, history } : { message }),
+    body: JSON.stringify(conversationId ? { conversationId, message } : { message }),
     signal,
   });
 }

@@ -29,6 +29,8 @@ export interface SimulationCalculation extends CalculationBase {
 }
 
 export interface ChatResponse {
+  conversationId?: string | null;
+  messageId?: string | null;
   answer: string;
   answerType: AnswerType;
   citations: Citation[];
@@ -37,7 +39,7 @@ export interface ChatResponse {
 }
 
 export interface ChatMessage {
-  id: number;
+  id: number | string;
   role: "user" | "assistant";
   text: string;
   response?: ChatResponse;

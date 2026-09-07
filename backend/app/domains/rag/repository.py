@@ -95,6 +95,7 @@ class RagRepository:
         embedding_model: str,
         embedding_version: str,
         embedding_dimensions: int,
+        contract_id: UUID | None = None,
     ) -> list[RetrievedChunk]:
         # Scope is applied in SQL before vectors or content leave persistence.
         global_types = knowledge_types - {KnowledgeType.CONTRACT_CLAUSE}
@@ -129,6 +130,8 @@ class RagRepository:
                 or_(*scope_conditions),
             )
         )
+        if contract_id is not None:
+            statement = statement.where(DocumentChunk.contract_id == contract_id)
         rows = self._session.scalars(statement).all()
         ranked = sorted(
             ((row, cosine_similarity(query_embedding, row.embedding)) for row in rows),

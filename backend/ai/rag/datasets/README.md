@@ -22,3 +22,8 @@ python -m ai.rag.ingest_seed --dataset all
 
 실제 적재에는 `.env`의 `AI_API_KEY`가 필요하다. GMS에서 발급받은 키나 실제 개인정보를
 Dataset에 넣지 않는다.
+
+서버는 기본적으로 시작할 때 네 JSONL을 검증하고 멱등 적재한다
+(`RAG_SEED_INGEST_ON_STARTUP=true`). content hash와 embedding model/version/dimensions가 같은
+레코드는 GMS embedding API를 다시 호출하지 않는다. 로그에는 원문이나 벡터 배열 대신 모델명,
+차원, dataset별 loaded/indexed/skippedUnchanged/disabled/deleted 개수만 남긴다.

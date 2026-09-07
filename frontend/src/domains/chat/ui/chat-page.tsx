@@ -25,6 +25,7 @@ const INITIAL_MESSAGE: ChatMessage = {
   role: "assistant",
   text: "확정된 계약과 현재 자금 현황을 근거로 답해드릴게요. 무엇이 궁금한가요?",
 };
+const CONVERSATION_STORAGE_KEY = "mairry.chat.conversationId";
 
 function errorMessage(error: unknown): string {
   if (error instanceof ApiError && error.message) return error.message;
@@ -49,11 +50,15 @@ export function ChatPage() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [failedQuestion, setFailedQuestion] = useState<string | null>(null);
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const nextId = useRef(1);
   const controller = useRef<AbortController | null>(null);
   const conversationEnd = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => () => controller.current?.abort(), []);
+  useEffect(() => {
+    setConversationId(window.localStorage.getItem(CONVERSATION_STORAGE_KEY));
+    return () => controller.current?.abort();
+  }, []);
   useEffect(() => {
     if (typeof conversationEnd.current?.scrollIntoView === "function") {
       conversationEnd.current.scrollIntoView({ block: "nearest" });
@@ -75,11 +80,15 @@ export function ChatPage() {
     controller.current = requestController;
 
     try {
-      const history = messages
-        .filter((message) => message.role === "user")
-        .map((message) => message.text)
-        .slice(-8);
-      const response = await sendChatMessage(normalized, history, requestController.signal);
+      const response = await sendChatMessage(
+        normalized,
+        conversationId,
+        requestController.signal,
+      );
+      if (response.conversationId) {
+        setConversationId(response.conversationId);
+        window.localStorage.setItem(CONVERSATION_STORAGE_KEY, response.conversationId);
+      }
       setMessages((current) => [
         ...current,
         { id: nextId.current++, role: "assistant", text: response.answer, response },
@@ -97,6 +106,15 @@ export function ChatPage() {
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     void ask(input);
+  }
+
+  function startNewConversation() {
+    controller.current?.abort();
+    window.localStorage.removeItem(CONVERSATION_STORAGE_KEY);
+    setConversationId(null);
+    setMessages([INITIAL_MESSAGE]);
+    setError(null);
+    setFailedQuestion(null);
   }
 
   return (
@@ -193,6 +211,9 @@ export function ChatPage() {
           <aside className="chat-guide" aria-labelledby="suggestions-title">
             <span className="chat-eyebrow">QUICK QUESTIONS</span>
             <h2 id="suggestions-title">이렇게 물어보세요</h2>
+            <button type="button" disabled={sending} onClick={startNewConversation}>
+              새 대화
+            </button>
             <div className="chat-suggestions">
               {SUGGESTED_QUESTIONS.map((question) => (
                 <button

@@ -429,16 +429,22 @@ amount는 0보다 큰 정수다. `simulatedExpectedBalance = currentExpectedBala
 
 ### POST /api/chat
 
-요청: `{"message": "웨딩홀 잔금일이 언제야?", "history": []}`
+첫 요청: `{"message": "라온벨 웨딩컨벤션 해지 수수료 알려줘"}`
 
-message는 공백이 아닌 1~2,000자 문자열이다. AI는 Backend ToolResult의 숫자, 날짜, 상태를
-변경하거나 재계산하지 않는다. `history`는 생략 가능한 최근 사용자 질문 배열(최대 8개)이며
-후속 질문의 검색어 재작성에만 사용하고 사용자 또는 WeddingPlan 접근 범위를 결정하지 않는다.
+후속 요청: `{"conversationId": "5ea3ca71-6178-47a3-8cd7-faa48e88df89", "message": "위 계약 예약금 얼마야?"}`
+
+message는 공백이 아닌 1~2,000자 문자열이다. 응답의 `conversationId`를 다음 요청에 보내면 서버가
+DB에 저장한 최근 user/assistant 메시지와 마지막 계약 문맥을 복원한다. ID를 생략하면 새 대화를
+생성한다. 다른 사용자 또는 현재 WeddingPlan이 아닌 대화 ID는 404로 처리한다. 기존 `history`는
+호환성용 deprecated 필드이며 서버 저장 이력이 기준이다. AI는 Backend ToolResult의 숫자, 날짜,
+상태를 변경하거나 재계산하지 않는다.
 
 계약 근거 응답:
 
 ```json
 {
+  "conversationId": "5ea3ca71-6178-47a3-8cd7-faa48e88df89",
+  "messageId": "9ee37921-e458-49ce-8267-c64dcd770542",
   "answer": "A웨딩홀 잔금일은 2027년 4월 30일입니다.",
   "answerType": "CONTRACT",
   "citations": [{
@@ -460,6 +466,8 @@ message는 공백이 아닌 1~2,000자 문자열이다. AI는 Backend ToolResult
 
 ```json
 {
+  "conversationId": "5ea3ca71-6178-47a3-8cd7-faa48e88df89",
+  "messageId": "fa563208-9b92-411c-b3f5-d54ef64bf122",
   "answer": "가전 비용 300만 원을 추가하면 예상 잔액은 700만 원이며 부족액은 없습니다.",
   "answerType": "CALCULATION",
   "citations": [],
@@ -480,6 +488,11 @@ null이다. `usedRag`는 검색 근거를 실제 답변에 사용했을 때만 t
 
 answerType은 CONTRACT, CALCULATION, NOT_FOUND, RAG, MIXED다. 지원하지 않는 질문과 Tool 실패에서는 임의의
 금액/날짜를 생성하지 않는다. 요청 오류 400, AI 실패 및 대체 응답 불가 502.
+
+`예약금`, `계약금`, `선금`, `첫 납부금`, `초기 납부금`, `1차 납부금`은 Payment 이름의 계약금
+alias다. `getContractDeposit`은 현재 계획의 확정 계약에서 이 이름과 일치하는 단 하나의 Payment만
+반환하며, 가장 이른 Payment를 계약금으로 추측하지 않는다. 응답은 DB의 amount와 PAID/UNPAID 상태를
+그대로 사용한다.
 
 ## Chat 내부 Tool 계약
 

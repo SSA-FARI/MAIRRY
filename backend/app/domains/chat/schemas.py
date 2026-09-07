@@ -10,6 +10,7 @@ from app.core.schema import ApiModel
 
 
 class ChatRequest(ApiModel):
+    conversation_id: UUID | None = None
     message: str = Field(min_length=1, max_length=2_000)
     history: list[Annotated[str, Field(max_length=2_000)]] = Field(
         default_factory=list, max_length=8
@@ -52,6 +53,8 @@ class SimulationCalculation(Calculation):
 
 
 class ChatResponse(ApiModel):
+    conversation_id: UUID | None = None
+    message_id: UUID | None = None
     answer: str
     answer_type: AnswerType
     citations: list[Citation]

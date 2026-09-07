@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 from ai.rag.chunking import ClauseSource, chunk_clause_sources
 from ai.rag.document_text import extract_pdf_clause_sources
 from ai.rag.embeddings import EmbeddingClient, OpenAiEmbeddingClient
-from ai.rag.routing import contains_prompt_injection
+from ai.rag.routing import contains_prompt_injection, is_relevant_contract_chunk
 from ai.rag.schemas import KnowledgeType, RetrievedChunk
 from app.core.config import Settings
 from app.core.database import SessionLocal
@@ -150,6 +150,7 @@ class RagSearchService:
         *,
         knowledge_types: set[KnowledgeType],
         wedding_plan_id: UUID | None,
+        contract_id: UUID | None = None,
     ) -> list[RetrievedChunk]:
         if not self._configuration.rag_enabled:
             return []
@@ -166,13 +167,21 @@ class RagSearchService:
                 embedding_model=self._embedder.model_name,
                 embedding_version=self._embedder.version,
                 embedding_dimensions=self._embedder.dimensions,
+                contract_id=contract_id,
             )
             for result in results:
                 current = best_by_id.get(result.chunk_id)
                 if current is None or result.score > current.score:
                     best_by_id[result.chunk_id] = result
+        combined_query = " ".join(selected_queries)
         safe_chunks = [
-            chunk for chunk in best_by_id.values() if not contains_prompt_injection(chunk.content)
+            chunk
+            for chunk in best_by_id.values()
+            if not contains_prompt_injection(chunk.content)
+            and (
+                chunk.knowledge_type != KnowledgeType.CONTRACT_CLAUSE
+                or is_relevant_contract_chunk(combined_query, chunk.content)
+            )
         ]
         priority = {
             KnowledgeType.CONTRACT_CLAUSE: 3,

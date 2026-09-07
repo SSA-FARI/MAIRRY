@@ -391,8 +391,14 @@ components:
       type: object
       required: [message]
       properties:
+        conversationId: {type: [string, "null"], format: uuid}
         message: {type: string, minLength: 1, maxLength: 2000}
-        history: {type: array, maxItems: 8, items: {type: string, maxLength: 2000}}
+        history:
+          type: array
+          maxItems: 8
+          deprecated: true
+          description: Legacy client hint. Persisted server conversation history is authoritative.
+          items: {type: string, maxLength: 2000}
       additionalProperties: false
     Citation:
       type: object
@@ -424,6 +430,8 @@ components:
       type: object
       required: [answer, answerType, citations, calculation]
       properties:
+        conversationId: {type: [string, "null"], format: uuid}
+        messageId: {type: [string, "null"], format: uuid}
         answer: {type: string}
         answerType: {type: string, enum: [CONTRACT, CALCULATION, NOT_FOUND, RAG, MIXED]}
         citations: {type: array, items: {$ref: "#/components/schemas/Citation"}}

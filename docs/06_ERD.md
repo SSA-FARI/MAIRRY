@@ -13,6 +13,8 @@
 | `cancellation_terms` | 취소·환불 등 계약조건과 근거 |
 | `documents` | 원본 계약서/견적서와 AI 분석 결과 |
 | `document_chunks` | 계약서 RAG 검색용 데이터 |
+| `chat_conversations` | 사용자·WeddingPlan 범위의 AI 대화 |
+| `chat_messages` | 역할과 마지막 참조 계약 문맥을 포함한 대화 메시지 |
 
 ## 테이블 명세서
 ## users
@@ -571,6 +573,14 @@ CancellationTerm
 | `created_at` | TIMESTAMPTZ | X | DEFAULT now() | 생성일 |
 
 `document_chunks.wedding_plan_id`와 원본 `documents.wedding_plan_id`는 반드시 일치해야 하며, 이 일치 여부는 저장 시 서비스 레이어에서 검증한다.
+
+## chat_conversations / chat_messages
+
+`chat_conversations`는 `wedding_plan_id`, `created_by_user_id`와 생성·수정 시각을 저장한다.
+`chat_messages`는 대화 FK, `role`, `content`, `context` JSONB, 생성 시각을 저장한다. assistant
+메시지의 context에는 마지막 `referencedContractId`, `referencedDocumentId`,
+`referencedVendorName`만 저장하며 계약 원문 전체를 복제하지 않는다. 대화 재사용 시 생성 사용자와
+현재 WeddingPlan을 모두 확인하고 최근 메시지만 시간순으로 읽는다.
 
 ## 권한 및 WeddingPlan 격리 원칙
 

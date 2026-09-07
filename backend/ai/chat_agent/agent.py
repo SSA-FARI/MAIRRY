@@ -5,6 +5,7 @@ from ai.common.types import ToolCall
 def decide_tool(intent: ChatIntent, arguments: dict[str, object] | None = None) -> ToolCall | None:
     tool_by_intent = {
         ChatIntent.CONTRACT: "getContractDetails",
+        ChatIntent.CONTRACT_PAYMENT: "getContractDeposit",
         ChatIntent.SCHEDULE: "getUpcomingPayments",
         ChatIntent.FINANCE_SUMMARY: "getFinanceSummary",
         ChatIntent.EXPENSE_SIMULATION: "simulateAdditionalExpense",

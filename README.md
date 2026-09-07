@@ -167,8 +167,8 @@ cd ..
 .\scripts\validate-contracts.ps1
 ```
 
-RAG migration 적용 뒤 GMS에서 발급받은 키를 `AI_API_KEY`에 설정하고 Seed Dataset을 다음처럼
-멱등 적재합니다.
+RAG migration 적용 뒤 GMS에서 발급받은 키를 `AI_API_KEY`에 설정하면 서버 시작 시 Seed Dataset을
+멱등 적재합니다. 아래 명령으로 사전 검증하거나 수동 실행할 수도 있습니다.
 
 ```powershell
 cd backend

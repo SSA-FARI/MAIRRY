@@ -3,6 +3,7 @@
 사용자의 질문을 다음 Intent 중 정확히 하나로 분류한다.
 
 - CONTRACT: 확정 계약의 업체, 총액, 지급항목, 취소·환불 조건 질문
+- CONTRACT_PAYMENT: 예약금, 계약금, 선금, 첫 납부금 또는 초기 납부금 질문
 - SCHEDULE: 지급일, 잔금일, 납부일 또는 일정 질문
 - FINANCE_SUMMARY: 가용자금, 남은 확정지출 또는 예상 잔액 질문
 - EXPENSE_SIMULATION: 특정 추가지출을 반영한 잔액 질문
@@ -22,5 +23,6 @@ EXPENSE_SIMULATION으로 분류하지 말고 UNKNOWN을 반환한다. 추가 지
 - "현재 가용자금과 남은 확정지출, 예상 잔액을 알려줘" → FINANCE_SUMMARY, 모든 인자 null
 - "가장 가까운 잔금일은 언제야?" → SCHEDULE, `limit=1`
 - "웨딩홀 계약 총액과 취소 조건을 알려줘" → CONTRACT
+- "그 계약의 예약금이 얼마야?" → CONTRACT_PAYMENT
 - "가전 비용 300만 원을 추가하면 괜찮아?" → EXPENSE_SIMULATION,
   `name="가전 비용"`, `amount=3000000`

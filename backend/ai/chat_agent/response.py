@@ -23,6 +23,7 @@ def explain_tool_result(question: str, result: ToolResultView) -> AnswerDraft:
 
     handlers = {
         "getContractDetails": _explain_contract,
+        "getContractDeposit": _explain_contract_deposit,
         "getUpcomingPayments": _explain_schedule,
         "getFinanceSummary": _explain_finance,
         "simulateAdditionalExpense": _explain_simulation,
@@ -91,6 +92,21 @@ def _explain_schedule(_question: str, result: ToolResultView) -> AnswerDraft:
     ]
     return AnswerDraft(
         answer=f"가까운 지급 일정은 {'; '.join(descriptions)}입니다.",
+        answer_type="CONTRACT",
+        citations=list(result.evidence),
+    )
+
+
+def _explain_contract_deposit(_question: str, result: ToolResultView) -> AnswerDraft:
+    assert result.data is not None
+    payment = result.data["payment"]
+    status_labels = {"PAID": "지급 완료", "UNPAID": "미지급", "UNKNOWN": "상태 미확인"}
+    return AnswerDraft(
+        answer=(
+            f"{result.data['company']} 계약의 예약금(계약금)은 "
+            f"{_won(payment['amount'])}원이며, 현재 상태는 "
+            f"{status_labels.get(payment['status'], payment['status'])}입니다."
+        ),
         answer_type="CONTRACT",
         citations=list(result.evidence),
     )

@@ -2,19 +2,23 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import logging
 from collections.abc import Iterable
 from pathlib import Path
 
 from pydantic import ValidationError
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.orm import Session
 
 from ai.rag.dataset_schemas import KnowledgeScope, RagDatasetRecord, build_embedding_text
 from ai.rag.embeddings import EmbeddingClient, OpenAiEmbeddingClient
 from app.core.config import Settings, settings
 from app.core.database import SessionLocal
+from app.domains.contracts import models as _contract_models  # noqa: F401
+from app.domains.documents import models as _document_models  # noqa: F401
 from app.domains.rag.models import DocumentChunk
 from app.domains.wedding_plan.models import WeddingPlan
+from app.domains.wedding_plan.repository import WeddingPlanRepository
 
 DATASET_ROOT = Path(__file__).resolve().parent / "datasets"
 DATASET_FILES = {
@@ -23,6 +27,8 @@ DATASET_FILES = {
     "service_faq": DATASET_ROOT / "service_faq.jsonl",
     "consultation_examples": DATASET_ROOT / "consultation_examples.jsonl",
 }
+logger = logging.getLogger(__name__)
+_SEED_INGEST_LOCK_ID = 6_247_921_883
 
 
 def load_dataset(name: str) -> list[RagDatasetRecord]:
@@ -150,6 +156,75 @@ def _embedding_client(configuration: Settings, model_name: str) -> OpenAiEmbeddi
         timeout_seconds=configuration.ai_timeout_seconds,
         batch_size=configuration.embedding_batch_size,
     )
+
+
+def ingest_configured_seed(configuration: Settings = settings) -> dict[str, dict[str, int]]:
+    """Ingest changed seed records once per startup without exposing input text in logs."""
+    client = _embedding_client(configuration, configuration.embedding_model_name)
+    loaded = {name: load_dataset(name) for name in DATASET_FILES}
+    session = SessionLocal()
+    summaries: dict[str, dict[str, int]] = {}
+    try:
+        # Multiple workers may start together. Serialize the read/upsert transaction in PostgreSQL.
+        session.execute(select(text(f"pg_advisory_xact_lock({_SEED_INGEST_LOCK_ID})")))
+        requires_demo_plan = any(
+            record.scope == KnowledgeScope.DEMO_PLAN
+            for records in loaded.values()
+            for record in records
+        )
+        demo_plan_id = None
+        if requires_demo_plan:
+            configured_plan = session.get(WeddingPlan, configuration.demo_wedding_plan_id)
+            active_plan = configured_plan or WeddingPlanRepository(session).get_current_for_user(
+                configuration.demo_user_id
+            )
+            demo_plan_id = active_plan.id if active_plan is not None else None
+        logger.info(
+            "RAG seed ingestion started: embeddingModel=%s embeddingVersion=%s "
+            "embeddingDimensions=%s datasets=%s",
+            client.model_name,
+            client.version,
+            client.dimensions,
+            len(loaded),
+        )
+        for name, records in loaded.items():
+            indexed, skipped, deleted = ingest_records(
+                session,
+                records,
+                client,
+                demo_plan_id=demo_plan_id,
+            )
+            summary = {
+                "loaded": len(records),
+                "indexed": indexed,
+                "skipped_unchanged": skipped,
+                "deleted": deleted,
+                "disabled": sum(not record.enabled for record in records),
+            }
+            summaries[name] = summary
+            logger.info(
+                "RAG seed dataset processed: dataset=%s loaded=%s indexed=%s "
+                "skippedUnchanged=%s disabled=%s deleted=%s",
+                name,
+                summary["loaded"],
+                summary["indexed"],
+                summary["skipped_unchanged"],
+                summary["disabled"],
+                summary["deleted"],
+            )
+        session.commit()
+        logger.info(
+            "RAG seed ingestion completed: vectorsIndexed=%s vectorsSkipped=%s vectorsDisabled=%s",
+            sum(item["indexed"] for item in summaries.values()),
+            sum(item["skipped_unchanged"] for item in summaries.values()),
+            sum(item["disabled"] for item in summaries.values()),
+        )
+        return summaries
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 
 def main() -> None:

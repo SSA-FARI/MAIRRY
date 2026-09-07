@@ -19,6 +19,13 @@ def classify_message(message: str) -> IntentDecision:
     normalized = " ".join(message.strip().split())
     contract_id = _extract_contract_id(normalized)
 
+    if _contains_any(
+        normalized,
+        ("예약금", "계약금", "선금", "첫 납부금", "초기 납부금", "1차 납부금"),
+    ):
+        arguments = {"contractId": contract_id} if contract_id is not None else {}
+        return _decision(ChatIntent.CONTRACT_PAYMENT, arguments)
+
     if _contains_any(normalized, ("추가", "더 쓰", "구매", "사도", "지출")):
         amount_match = _AMOUNT_PATTERN.search(normalized)
         if amount_match is not None:

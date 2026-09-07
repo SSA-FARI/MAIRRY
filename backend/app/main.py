@@ -1,7 +1,11 @@
+import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
 from app.core.errors import register_exception_handlers
@@ -12,6 +16,23 @@ from app.domains.documents.router import router as documents_router
 from app.domains.finance.router import router as finance_router
 from app.domains.wedding_plan.router import router as wedding_plan_router
 from app.domains.wedding_plan.schemas import WeddingPlanRead, WeddingPlanUpsert
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    if settings.rag_enabled and settings.rag_seed_ingest_on_startup:
+        try:
+            from ai.rag.ingest_seed import ingest_configured_seed
+
+            await run_in_threadpool(ingest_configured_seed, settings)
+        except Exception as exc:
+            logger.exception(
+                "RAG seed startup ingestion failed: errorType=%s",
+                type(exc).__name__,
+            )
+    yield
 
 
 class MairryAPI(FastAPI):
@@ -36,7 +57,7 @@ class MairryAPI(FastAPI):
         return openapi_schema
 
 
-app = MairryAPI(title="MAIRRY API", version="0.1.0")
+app = MairryAPI(title="MAIRRY API", version="0.1.0", lifespan=lifespan)
 register_exception_handlers(app)
 app.add_middleware(
     CORSMiddleware,

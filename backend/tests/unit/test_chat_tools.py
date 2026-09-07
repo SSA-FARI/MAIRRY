@@ -2,6 +2,7 @@ from datetime import UTC, date, datetime
 from types import SimpleNamespace
 from uuid import UUID
 
+import pytest
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.enums import ContractStatus, DocumentType, PaymentStatus
@@ -21,11 +22,13 @@ def _payment(
     due_date: date | None,
     status: PaymentStatus = PaymentStatus.UNPAID,
     source_text: str | None = "잔금 근거",
+    name: str = "잔금",
+    amount: int = 20_000_000,
 ) -> Payment:
     return Payment(
         id=UUID(int=payment_id),
-        name="잔금",
-        amount=20_000_000,
+        name=name,
+        amount=amount,
         due_date=due_date,
         status=status,
         source_text=source_text,
@@ -194,3 +197,53 @@ def test_chat_03_08_09_failures_never_include_data_or_evidence() -> None:
     for result in (not_found, invalid, tool_error):
         assert result.data is None
         assert result.evidence == []
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["예약금", "계약금", "선금", "첫 납부금", "초기 납부금", "1차 납부금"],
+)
+def test_contract_deposit_uses_explicit_payment_aliases_and_status(name: str) -> None:
+    registry = _registry()
+    contract = _contract(
+        _payment(
+            5,
+            due_date=date(2026, 8, 1),
+            status=PaymentStatus.PAID,
+            source_text="계약금 3,000,000원 지급 완료",
+            name=name,
+            amount=3_000_000,
+        )
+    )
+    registry._contracts.get_confirmed = lambda _plan_id, _contract_id: contract
+
+    result = registry.execute("getContractDeposit", {"contractId": str(CONTRACT_ID)}, USER_ID)
+
+    assert result.status == "SUCCESS"
+    assert result.data is not None
+    assert result.data["payment"]["amount"] == 3_000_000
+    assert result.data["payment"]["status"] == "PAID"
+
+
+def test_contract_deposit_never_guesses_earliest_payment() -> None:
+    registry = _registry()
+    contract = _contract(
+        _payment(5, due_date=date(2026, 1, 1), name="중도금"),
+        _payment(6, due_date=date(2026, 2, 1), name="잔금"),
+    )
+    registry._contracts.get_confirmed = lambda _plan_id, _contract_id: contract
+
+    result = registry.execute("getContractDeposit", {"contractId": str(CONTRACT_ID)}, USER_ID)
+
+    assert result.status == "INSUFFICIENT_DATA"
+    assert result.data is None
+
+
+def test_contract_deposit_cannot_read_contract_outside_current_plan() -> None:
+    registry = _registry()
+    registry._contracts.get_confirmed = lambda _plan_id, _contract_id: None
+
+    result = registry.execute("getContractDeposit", {"contractId": str(UUID(int=99))}, USER_ID)
+
+    assert result.status == "NOT_FOUND"
+    assert result.data is None

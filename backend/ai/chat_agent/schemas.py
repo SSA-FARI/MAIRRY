@@ -49,6 +49,7 @@ class IntentDecision(AiContractModel):
         }
         allowed = {
             ChatIntent.CONTRACT: {"contractId"},
+            ChatIntent.CONTRACT_PAYMENT: {"contractId"},
             ChatIntent.SCHEDULE: {"contractId", "from", "to", "limit"},
             ChatIntent.FINANCE_SUMMARY: set(),
             ChatIntent.EXPENSE_SIMULATION: {"name", "amount"},

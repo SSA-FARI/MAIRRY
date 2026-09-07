@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     embedding_version: str = "v1"
     embedding_dimensions: int = Field(default=1536, gt=0)
     embedding_batch_size: int = Field(default=64, ge=1, le=2048)
+    rag_seed_ingest_on_startup: bool = True
 
     model_config = SettingsConfigDict(
         env_file=(REPOSITORY_ENV_FILE, BACKEND_ENV_FILE),

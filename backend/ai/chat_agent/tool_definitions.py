@@ -3,6 +3,10 @@ TOOLS = {
         "description": "특정 계약의 지급·취소조건과 원문 근거를 조회합니다.",
         "required": ["contractId"],
     },
+    "getContractDeposit": {
+        "description": "특정 확정 계약의 계약금·예약금 지급항목과 상태를 조회합니다.",
+        "required": ["contractId"],
+    },
     "getUpcomingPayments": {
         "description": "확정된 향후 지급 일정을 조회합니다.",
         "required": [],

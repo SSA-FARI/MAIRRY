@@ -1,3 +1,7 @@
+import logging
+from types import SimpleNamespace
+
+from ai.rag import ingest_seed
 from ai.rag.dataset_schemas import RagDatasetRecord
 from ai.rag.ingest_seed import ingest_records
 
@@ -32,12 +36,26 @@ class FakeScalars:
 class FakeSession:
     def __init__(self) -> None:
         self.items = []
+        self.committed = False
+        self.closed = False
 
     def scalars(self, statement):
         return FakeScalars(self.items)
 
     def add(self, item) -> None:
         self.items.append(item)
+
+    def execute(self, _statement):
+        return None
+
+    def commit(self) -> None:
+        self.committed = True
+
+    def rollback(self) -> None:
+        pass
+
+    def close(self) -> None:
+        self.closed = True
 
 
 def _record(content: str = "계약서를 업로드합니다.") -> RagDatasetRecord:
@@ -78,3 +96,32 @@ def test_changed_content_reembeds_only_that_record() -> None:
 
     assert (indexed, skipped) == (1, 0)
     assert len(client.calls) == 2
+
+
+def test_startup_ingestion_logs_vector_and_embedding_summary(monkeypatch, caplog) -> None:
+    session = FakeSession()
+    client = FakeEmbeddingClient()
+    configuration = SimpleNamespace(
+        embedding_model_name="text-embedding-3-small",
+        demo_wedding_plan_id=None,
+    )
+    monkeypatch.setattr(ingest_seed, "DATASET_FILES", {"service_faq": object()})
+    monkeypatch.setattr(ingest_seed, "load_dataset", lambda _name: [_record()])
+    monkeypatch.setattr(ingest_seed, "_embedding_client", lambda *_args: client)
+    monkeypatch.setattr(ingest_seed, "SessionLocal", lambda: session)
+
+    with caplog.at_level(logging.INFO, logger="ai.rag.ingest_seed"):
+        summary = ingest_seed.ingest_configured_seed(configuration)  # type: ignore[arg-type]
+
+    assert summary["service_faq"] == {
+        "loaded": 1,
+        "indexed": 1,
+        "skipped_unchanged": 0,
+        "deleted": 0,
+        "disabled": 0,
+    }
+    assert session.committed is True
+    assert session.closed is True
+    assert "embeddingModel=text-embedding-3-small" in caplog.text
+    assert "vectorsIndexed=1" in caplog.text
+    assert "loaded=1 indexed=1 skippedUnchanged=0" in caplog.text

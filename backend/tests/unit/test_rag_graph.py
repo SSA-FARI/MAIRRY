@@ -1,7 +1,9 @@
 import asyncio
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import UUID
 
+from ai.common.types import ToolResultView
 from ai.rag.schemas import KnowledgeType, RetrievedChunk
 from app.application.chat_orchestration import ChatOrchestrationService
 
@@ -16,8 +18,9 @@ class StubRagSearch:
         self.error = error
         self.calls: list[tuple[list[str], set[KnowledgeType], UUID | None]] = []
 
-    def search(self, queries, *, knowledge_types, wedding_plan_id):
+    def search(self, queries, *, knowledge_types, wedding_plan_id, contract_id=None):
         self.calls.append((queries, knowledge_types, wedding_plan_id))
+        self.contract_id = contract_id
         if self.error:
             raise self.error
         return self.chunks
@@ -33,6 +36,7 @@ def _service(rag: StubRagSearch) -> ChatOrchestrationService:
         SimpleNamespace(),
         configuration,
         rag_service=rag,  # type: ignore[arg-type]
+        tool_registry=SimpleNamespace(),  # type: ignore[arg-type]
         plan_resolver=lambda _user_id: SimpleNamespace(id=PLAN_ID),
     )
 
@@ -86,3 +90,78 @@ def test_retrieval_failure_does_not_fall_back_to_guessed_contract_terms() -> Non
     assert response.answer_type.value == "NOT_FOUND"
     assert response.citations == []
     assert "private" not in response.answer
+
+
+def test_mixed_follow_up_reuses_contract_for_payment_tool_and_rag_filter() -> None:
+    rag = StubRagSearch(
+        [
+            RetrievedChunk(
+                chunk_id="c" * 64,
+                content_hash="d" * 64,
+                content="예식 30일 전 취소 시 계약금은 반환되지 않습니다.",
+                knowledge_type=KnowledgeType.CONTRACT_CLAUSE,
+                title="라온벨 웨딩컨벤션 계약서",
+                clause_title="취소 규정",
+                page=2,
+                chunk_index=0,
+                score=0.9,
+                document_id=DOCUMENT_ID,
+                contract_id=CONTRACT_ID,
+            )
+        ]
+    )
+
+    class DepositRegistry:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def resolve_explicit_contract_id(self, _message, _user_id):
+            return None
+
+        def resolve_contract_id(self, _message, _user_id):
+            return None
+
+        def execute(self, tool_name, arguments, user_id):
+            self.calls.append((tool_name, arguments, user_id))
+            return ToolResultView(
+                status="SUCCESS",
+                tool_name="getContractDeposit",
+                data={
+                    "contractId": str(CONTRACT_ID),
+                    "company": "라온벨 웨딩컨벤션",
+                    "payment": {"amount": 3_000_000, "status": "PAID"},
+                },
+                evidence=[],
+                calculated_at=datetime(2026, 9, 7, tzinfo=UTC),
+                error=None,
+            )
+
+    registry = DepositRegistry()
+    configuration = SimpleNamespace(
+        demo_user_id=UUID(int=1),
+        enable_demo_fallback=True,
+        rag_history_limit=8,
+    )
+    service = ChatOrchestrationService(
+        SimpleNamespace(),
+        configuration,
+        rag_service=rag,  # type: ignore[arg-type]
+        tool_registry=registry,  # type: ignore[arg-type]
+        plan_resolver=lambda _user_id: SimpleNamespace(id=PLAN_ID),
+    )
+
+    response = asyncio.run(
+        service.process(
+            "그 예약금은 지금 취소하면 어떻게 돼?",
+            referenced_contract_id=CONTRACT_ID,
+            referenced_document_id=DOCUMENT_ID,
+            referenced_vendor_name="라온벨 웨딩컨벤션",
+        )
+    )
+
+    assert registry.calls[0][0] == "getContractDeposit"
+    assert registry.calls[0][1]["contractId"] == str(CONTRACT_ID)
+    assert rag.contract_id == CONTRACT_ID
+    assert service.contract_resolution_source == "conversation_context"
+    assert response.answer_type.value == "MIXED"
+    assert response.used_rag is True

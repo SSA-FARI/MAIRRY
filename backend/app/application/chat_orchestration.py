@@ -3,6 +3,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any, NoReturn, TypedDict
+from uuid import UUID
 
 from fastapi import status
 from langgraph.graph import END, START, StateGraph
@@ -17,7 +18,13 @@ from ai.chat_agent.response import AnswerDraft, explain_tool_result
 from ai.common.exceptions import AiError
 from ai.common.types import ToolResultView
 from ai.providers.base import ChatProvider
-from ai.rag.routing import RagRoute, classify_rag_route, expand_queries, rewrite_question
+from ai.rag.routing import (
+    RagRoute,
+    classify_rag_route,
+    expand_queries,
+    has_contract_reference,
+    rewrite_question,
+)
 from ai.rag.schemas import KnowledgeType, RetrievedChunk
 from app.core.config import Settings
 from app.core.error_codes import ErrorCode
@@ -45,6 +52,9 @@ class ChatState(TypedDict, total=False):
     response: ChatResponse
     use_provider: bool
     retrieval_failed: bool
+    referenced_contract_id: UUID | None
+    referenced_document_id: UUID | None
+    referenced_vendor_name: str | None
 
 
 class ChatOrchestrationService:
@@ -69,14 +79,41 @@ class ChatOrchestrationService:
             plan_resolver or WeddingPlanRepository(self._session).get_current_for_user
         )
         self._graph = self._build_graph()
+        self.referenced_contract_id: UUID | None = None
+        self.referenced_document_id: UUID | None = None
+        self.referenced_vendor_name: str | None = None
+        self.intent: str | None = None
+        self.tool_name: str | None = None
+        self.contract_resolution_source: str | None = None
+        self.retrieved_chunk_count = 0
 
-    async def process(self, message: str, *, history: list[str] | None = None) -> ChatResponse:
+    async def process(
+        self,
+        message: str,
+        *,
+        history: list[str] | None = None,
+        referenced_contract_id: UUID | None = None,
+        referenced_document_id: UUID | None = None,
+        referenced_vendor_name: str | None = None,
+    ) -> ChatResponse:
+        self.contract_resolution_source = None
         state = await self._graph.ainvoke(
             {
                 "question": message,
                 "history": (history or [])[-getattr(self._configuration, "rag_history_limit", 8) :],
+                "referenced_contract_id": referenced_contract_id,
+                "referenced_document_id": referenced_document_id,
+                "referenced_vendor_name": referenced_vendor_name,
             }
         )
+        self.referenced_contract_id = state.get("referenced_contract_id")
+        self.referenced_document_id = state.get("referenced_document_id")
+        self.referenced_vendor_name = state.get("referenced_vendor_name")
+        decision = state.get("decision")
+        self.intent = decision.intent.value if decision is not None else None
+        tool_result = state.get("tool_result")
+        self.tool_name = tool_result.tool_name if tool_result is not None else None
+        self.retrieved_chunk_count = len(state.get("retrieved_chunks", []))
         return state["response"]
 
     def _build_graph(self):
@@ -108,7 +145,11 @@ class ChatOrchestrationService:
         return graph.compile()
 
     def _prepare(self, state: ChatState) -> dict[str, Any]:
-        rewritten = rewrite_question(state["question"], state.get("history", []))
+        rewritten = rewrite_question(
+            state["question"],
+            state.get("history", []),
+            state.get("referenced_vendor_name"),
+        )
         return {"rewritten_question": rewritten, "queries": expand_queries(rewritten)}
 
     async def _classify(self, state: ChatState) -> dict[str, Any]:
@@ -130,26 +171,89 @@ class ChatOrchestrationService:
 
     async def _tool(self, state: ChatState) -> dict[str, Any]:
         result = await run_in_threadpool(
-            self._execute_tool, state["rewritten_question"], state["decision"]
+            self._execute_tool,
+            state["rewritten_question"],
+            state["decision"],
+            state.get("referenced_contract_id"),
+            has_contract_reference(state["question"]),
         )
-        return {"tool_result": result}
+        context = self._context_from_tool_result(result)
+        return {"tool_result": result, **context}
 
     async def _retrieve(self, state: ChatState) -> dict[str, Any]:
+        explicit_reference_context: dict[str, Any] = {}
         try:
+            explicit_context_resolver = getattr(
+                self._tools, "resolve_explicit_contract_context", None
+            )
+            explicit_context = (
+                await run_in_threadpool(
+                    explicit_context_resolver,
+                    state["rewritten_question"],
+                    self._configuration.demo_user_id,
+                )
+                if explicit_context_resolver is not None
+                else None
+            )
+            target_contract_id = (
+                UUID(explicit_context["contractId"])
+                if explicit_context is not None
+                else (
+                    state.get("referenced_contract_id")
+                    if has_contract_reference(state["question"])
+                    else None
+                )
+            )
+            if explicit_context is not None:
+                self.contract_resolution_source = (
+                    "conversation_context"
+                    if has_contract_reference(state["question"])
+                    and target_contract_id == state.get("referenced_contract_id")
+                    else "explicit_vendor"
+                )
+                explicit_reference_context = {
+                    "referenced_contract_id": target_contract_id,
+                    "referenced_document_id": UUID(explicit_context["documentId"]),
+                    "referenced_vendor_name": explicit_context["company"],
+                }
+            elif target_contract_id is not None:
+                self.contract_resolution_source = "conversation_context"
             plan = await run_in_threadpool(
                 self._plan_resolver,
                 self._configuration.demo_user_id,
             )
+            search_arguments = {
+                "knowledge_types": state["knowledge_types"],
+                "wedding_plan_id": plan.id if plan is not None else None,
+            }
+            if target_contract_id is not None:
+                search_arguments["contract_id"] = target_contract_id
             chunks = await run_in_threadpool(
                 self._rag.search,
                 state["queries"],
-                knowledge_types=state["knowledge_types"],
-                wedding_plan_id=plan.id if plan is not None else None,
+                **search_arguments,
             )
-            return {"retrieved_chunks": chunks, "retrieval_failed": False}
+            context = explicit_reference_context.copy()
+            contract_chunk = next((chunk for chunk in chunks if chunk.contract_id), None)
+            if contract_chunk is not None:
+                vendor_name = contract_chunk.title.removesuffix(" 계약서").strip()
+                context.update(
+                    {
+                        "referenced_contract_id": contract_chunk.contract_id,
+                        "referenced_document_id": contract_chunk.document_id,
+                        "referenced_vendor_name": context.get(
+                            "referenced_vendor_name", vendor_name
+                        ),
+                    }
+                )
+            return {"retrieved_chunks": chunks, "retrieval_failed": False, **context}
         except (SQLAlchemyError, RuntimeError, ValueError) as exc:
-            logger.warning("RAG retrieval failed: errorType=%s", type(exc).__name__, str(exc),)
-            return {"retrieved_chunks": [], "retrieval_failed": True}
+            logger.warning("RAG retrieval failed: errorType=%s", type(exc).__name__)
+            return {
+                "retrieved_chunks": [],
+                "retrieval_failed": True,
+                **explicit_reference_context,
+            }
 
     async def _generate(self, state: ChatState) -> dict[str, Any]:
         chunks = state.get("retrieved_chunks", [])
@@ -208,13 +312,43 @@ class ChatOrchestrationService:
             "sourceText": chunk.content,
         }
 
-    def _execute_tool(self, message: str, decision: IntentDecision) -> ToolResultView | None:
+    def _execute_tool(
+        self,
+        message: str,
+        decision: IntentDecision,
+        referenced_contract_id: UUID | None = None,
+        references_previous_contract: bool = False,
+    ) -> ToolResultView | None:
         arguments = dict(decision.arguments)
+        self.contract_resolution_source = "provider_argument" if "contractId" in arguments else None
         if (
-            decision.intent in {ChatIntent.CONTRACT, ChatIntent.SCHEDULE}
+            decision.intent
+            in {ChatIntent.CONTRACT, ChatIntent.CONTRACT_PAYMENT, ChatIntent.SCHEDULE}
             and "contractId" not in arguments
         ):
-            contract_id = self._tools.resolve_contract_id(message, self._configuration.demo_user_id)
+            explicit_resolver = getattr(self._tools, "resolve_explicit_contract_id", None)
+            explicit_contract_id = (
+                explicit_resolver(message, self._configuration.demo_user_id)
+                if explicit_resolver is not None
+                else None
+            )
+            contract_id = explicit_contract_id
+            if explicit_contract_id is not None:
+                self.contract_resolution_source = (
+                    "conversation_context"
+                    if references_previous_contract
+                    and explicit_contract_id == referenced_contract_id
+                    else "explicit_vendor"
+                )
+            if contract_id is None and referenced_contract_id and references_previous_contract:
+                contract_id = referenced_contract_id
+                self.contract_resolution_source = "conversation_context"
+            if contract_id is None:
+                contract_id = self._tools.resolve_contract_id(
+                    message, self._configuration.demo_user_id
+                )
+                if contract_id is not None:
+                    self.contract_resolution_source = "confirmed_contract_fallback"
             if contract_id is not None:
                 arguments["contractId"] = str(contract_id)
         call = decide_tool(decision.intent, arguments)
@@ -223,6 +357,27 @@ class ChatOrchestrationService:
             if call is not None
             else None
         )
+
+    @staticmethod
+    def _context_from_tool_result(result: ToolResultView | None) -> dict[str, Any]:
+        if result is None or result.status != "SUCCESS" or result.data is None:
+            return {}
+        raw_contract_id = result.data.get("contractId") or result.data.get("id")
+        if raw_contract_id is None:
+            payments = result.data.get("payments", [])
+            raw_contract_id = payments[0].get("contractId") if len(payments) == 1 else None
+        try:
+            contract_id = UUID(str(raw_contract_id)) if raw_contract_id else None
+        except ValueError:
+            contract_id = None
+        context = {
+            "referenced_contract_id": contract_id,
+            "referenced_document_id": (
+                UUID(str(result.data["documentId"])) if result.data.get("documentId") else None
+            ),
+            "referenced_vendor_name": result.data.get("company"),
+        }
+        return {key: value for key, value in context.items() if value is not None}
 
     async def _classify_intent(self, message: str) -> tuple[IntentDecision, bool]:
         if self._provider is None:
