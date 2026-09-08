@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import math
 from collections.abc import Iterable, Sequence
-from typing import Any, Protocol
+from typing import Any, Protocol, Self
 
 import httpx
 
 DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
 DEFAULT_EMBEDDING_VERSION = "v1"
 DEFAULT_EMBEDDING_DIMENSIONS = 1536
+DEFAULT_MAX_CONNECTIONS = 20
+DEFAULT_MAX_KEEPALIVE_CONNECTIONS = 10
 
 
 class EmbeddingError(RuntimeError):
@@ -59,13 +61,30 @@ class OpenAiEmbeddingClient:
         )
         self._timeout_seconds = timeout_seconds
         self._batch_size = batch_size
-        self._http_client = http_client
+        self._owns_http_client = http_client is None
+        self._http_client = http_client or httpx.Client(
+            timeout=timeout_seconds,
+            limits=httpx.Limits(
+                max_connections=DEFAULT_MAX_CONNECTIONS,
+                max_keepalive_connections=DEFAULT_MAX_KEEPALIVE_CONNECTIONS,
+            ),
+        )
         self.model_name = model_name.strip()
         self.version = version.strip()
         self.dimensions = dimensions
 
     def embed(self, text: str) -> list[float]:
         return self.embed_many([text])[0]
+
+    def close(self) -> None:
+        if self._owns_http_client and not self._http_client.is_closed:
+            self._http_client.close()
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        self.close()
 
     def embed_many(self, texts: Iterable[str]) -> list[list[float]]:
         normalized = [text.strip() for text in texts]
@@ -87,20 +106,12 @@ class OpenAiEmbeddingClient:
             "Content-Type": "application/json",
         }
         try:
-            if self._http_client is not None:
-                response = self._http_client.post(
-                    self._embeddings_url,
-                    headers=headers,
-                    json={"model": self.model_name, "input": inputs},
-                    timeout=self._timeout_seconds,
-                )
-            else:
-                with httpx.Client(timeout=self._timeout_seconds) as client:
-                    response = client.post(
-                        self._embeddings_url,
-                        headers=headers,
-                        json={"model": self.model_name, "input": inputs},
-                    )
+            response = self._http_client.post(
+                self._embeddings_url,
+                headers=headers,
+                json={"model": self.model_name, "input": inputs},
+                timeout=self._timeout_seconds,
+            )
             response.raise_for_status()
         except httpx.TimeoutException as exc:
             raise EmbeddingError("Embedding provider request timed out") from exc

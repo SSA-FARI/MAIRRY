@@ -17,6 +17,8 @@ _FINANCE_WORDS = (
     "잔금일",
     "결제일",
     "남은 금액",
+    "남은 지출",
+    "남은 잔액",
     "예상 잔액",
     "가용자금",
     "추가 지출",
@@ -26,6 +28,7 @@ _FINANCE_WORDS = (
     "첫 납부금",
     "초기 납부금",
     "1차 납부금",
+    "잔금",
 )
 _FAQ_WORDS = ("로그인", "업로드", "확정하려면", "수정하려면", "삭제하려면", "사용법", "다시 시도")
 _DOMAIN_WORDS = ("보증인원이 뭐", "스드메", "원본 구매", "수정본", "식대", "대관료", "뜻이")
@@ -81,8 +84,19 @@ def rewrite_question(
     question: str,
     history: list[str],
     referenced_vendor_name: str | None = None,
+    previous_calculation: dict[str, object] | None = None,
 ) -> str:
     normalized = " ".join(question.split())
+    if previous_calculation and any(
+        token in normalized for token in ("그럼", "그러면", "그래도", "그 금액", "그거")
+    ):
+        expense_name = previous_calculation.get("expenseName") or "직전 추가 지출"
+        amount = previous_calculation.get("additionalExpense")
+        amount_text = f" {int(amount):,}원" if isinstance(amount, int) else ""
+        return (
+            "현재 확정된 계약과 자금계획 기준으로 "
+            f"{expense_name}에{amount_text}을 추가 지출해도 예산이 부족하지 않은가?"
+        )
     if referenced_vendor_name and has_contract_reference(normalized):
         rewritten = normalized
         for token in _CONTRACT_REFERENCES:

@@ -93,6 +93,10 @@ def test_conversation_restores_recent_roles_and_referenced_contract_context() ->
                     "referencedContractId": str(CONTRACT_ID),
                     "referencedDocumentId": str(DOCUMENT_ID),
                     "referencedVendorName": "라온벨 웨딩컨벤션",
+                    "lastCalculation": {
+                        "toolName": "simulateAdditionalExpense",
+                        "simulatedExpectedBalance": 21_000_000,
+                    },
                 },
             ),
         ],
@@ -113,6 +117,10 @@ def test_conversation_restores_recent_roles_and_referenced_contract_context() ->
     assert turn.referenced_contract_id == CONTRACT_ID
     assert turn.referenced_document_id == DOCUMENT_ID
     assert turn.referenced_vendor_name == "라온벨 웨딩컨벤션"
+    assert turn.previous_calculation == {
+        "toolName": "simulateAdditionalExpense",
+        "simulatedExpectedBalance": 21_000_000,
+    }
     assert repository.added_messages[-1].role == "user"
 
 
@@ -186,6 +194,10 @@ def test_assistant_message_persists_reference_context_and_commits() -> None:
         referenced_contract_id=CONTRACT_ID,
         referenced_document_id=DOCUMENT_ID,
         referenced_vendor_name="라온벨 웨딩컨벤션",
+        calculation_context={
+            "toolName": "simulateAdditionalExpense",
+            "simulatedExpectedBalance": 21_000_000,
+        },
     )
 
     assistant = repository.added_messages[-1]
@@ -194,5 +206,9 @@ def test_assistant_message_persists_reference_context_and_commits() -> None:
         "referencedContractId": str(CONTRACT_ID),
         "referencedDocumentId": str(DOCUMENT_ID),
         "referencedVendorName": "라온벨 웨딩컨벤션",
+        "lastCalculation": {
+            "toolName": "simulateAdditionalExpense",
+            "simulatedExpectedBalance": 21_000_000,
+        },
     }
     assert service._session.committed is True

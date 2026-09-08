@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     embedding_dimensions: int = Field(default=1536, gt=0)
     embedding_batch_size: int = Field(default=64, ge=1, le=2048)
     rag_seed_ingest_on_startup: bool = True
+    rag_index_reconciliation_enabled: bool = True
+    rag_index_reconciliation_interval_seconds: float = Field(default=30, gt=0)
+    rag_index_max_attempts: int = Field(default=3, ge=1, le=20)
+    rag_index_retry_base_seconds: float = Field(default=5, ge=0, le=3_600)
+    rag_index_stale_after_seconds: float = Field(default=300, gt=0)
+    rag_index_batch_size: int = Field(default=10, ge=1, le=100)
 
     model_config = SettingsConfigDict(
         env_file=(REPOSITORY_ENV_FILE, BACKEND_ENV_FILE),

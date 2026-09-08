@@ -54,6 +54,74 @@ def test_embedding_client_batches_requests() -> None:
     assert calls == 2
 
 
+def test_owned_http_client_is_reused_and_closed_once(monkeypatch) -> None:
+    created: list[object] = []
+
+    class FakeClient:
+        def __init__(self, **_kwargs) -> None:
+            self.is_closed = False
+            self.posts = 0
+            self.close_calls = 0
+            created.append(self)
+
+        def post(self, url, **_kwargs) -> httpx.Response:
+            self.posts += 1
+            return httpx.Response(
+                200,
+                request=httpx.Request("POST", url),
+                json={
+                    "model": "text-embedding-3-small",
+                    "data": [{"index": 0, "embedding": [1.0, 0.0, 0.0]}],
+                },
+            )
+
+        def close(self) -> None:
+            self.close_calls += 1
+            self.is_closed = True
+
+    monkeypatch.setattr(httpx, "Client", FakeClient)
+    client = OpenAiEmbeddingClient(
+        api_key="test-gms-key",
+        base_url="https://gms.ssafy.io/gmsapi/api.openai.com/v1",
+        dimensions=3,
+        batch_size=1,
+    )
+
+    client.embed_many(["하나", "둘"])
+    client.close()
+    client.close()
+
+    assert len(created) == 1
+    assert created[0].posts == 2
+    assert created[0].close_calls == 1
+
+
+def test_injected_http_client_is_not_closed_by_embedding_adapter() -> None:
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(
+            200,
+            request=request,
+            json={
+                "model": "text-embedding-3-small",
+                "data": [{"index": 0, "embedding": [1.0, 0.0, 0.0]}],
+            },
+        )
+    )
+    injected = httpx.Client(transport=transport)
+    client = OpenAiEmbeddingClient(
+        api_key="test-gms-key",
+        base_url="https://gms.ssafy.io/gmsapi/api.openai.com/v1",
+        dimensions=3,
+        http_client=injected,
+    )
+
+    client.embed("질문")
+    client.close()
+
+    assert injected.is_closed is False
+    injected.close()
+
+
 def test_embedding_client_accepts_full_embeddings_endpoint() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert str(request.url).endswith("/v1/embeddings")

@@ -55,6 +55,7 @@ class ChatState(TypedDict, total=False):
     referenced_contract_id: UUID | None
     referenced_document_id: UUID | None
     referenced_vendor_name: str | None
+    previous_calculation: dict[str, Any] | None
 
 
 class ChatOrchestrationService:
@@ -86,6 +87,8 @@ class ChatOrchestrationService:
         self.tool_name: str | None = None
         self.contract_resolution_source: str | None = None
         self.retrieved_chunk_count = 0
+        self.calculation_context: dict[str, Any] | None = None
+        self.rewritten_question: str | None = None
 
     async def process(
         self,
@@ -95,6 +98,7 @@ class ChatOrchestrationService:
         referenced_contract_id: UUID | None = None,
         referenced_document_id: UUID | None = None,
         referenced_vendor_name: str | None = None,
+        previous_calculation: dict[str, Any] | None = None,
     ) -> ChatResponse:
         self.contract_resolution_source = None
         state = await self._graph.ainvoke(
@@ -104,6 +108,7 @@ class ChatOrchestrationService:
                 "referenced_contract_id": referenced_contract_id,
                 "referenced_document_id": referenced_document_id,
                 "referenced_vendor_name": referenced_vendor_name,
+                "previous_calculation": previous_calculation,
             }
         )
         self.referenced_contract_id = state.get("referenced_contract_id")
@@ -114,7 +119,26 @@ class ChatOrchestrationService:
         tool_result = state.get("tool_result")
         self.tool_name = tool_result.tool_name if tool_result is not None else None
         self.retrieved_chunk_count = len(state.get("retrieved_chunks", []))
-        return state["response"]
+        self.rewritten_question = state.get("rewritten_question")
+        response = state["response"]
+        self.calculation_context = (
+            response.calculation.model_dump(mode="json", by_alias=True)
+            if response.calculation is not None
+            else None
+        )
+        if (
+            self.calculation_context is not None
+            and tool_result is not None
+            and tool_result.tool_name == "simulateAdditionalExpense"
+            and tool_result.data is not None
+        ):
+            self.calculation_context.update(
+                {
+                    "expenseName": tool_result.data.get("name"),
+                    "additionalExpense": tool_result.data.get("additionalExpense"),
+                }
+            )
+        return response
 
     def _build_graph(self):
         graph = StateGraph(ChatState)
@@ -149,10 +173,23 @@ class ChatOrchestrationService:
             state["question"],
             state.get("history", []),
             state.get("referenced_vendor_name"),
+            state.get("previous_calculation"),
         )
         return {"rewritten_question": rewritten, "queries": expand_queries(rewritten)}
 
     async def _classify(self, state: ChatState) -> dict[str, Any]:
+        deterministic = self._classifier(state["question"])
+        if deterministic.intent in {
+            ChatIntent.GENERAL_CHAT,
+            ChatIntent.FOLLOW_UP,
+            ChatIntent.NEEDS_CLARIFICATION,
+        }:
+            return {
+                "route": RagRoute.GENERAL,
+                "knowledge_types": set(),
+                "decision": deterministic,
+                "use_provider": False,
+            }
         route, knowledge_types = classify_rag_route(state["rewritten_question"])
         decision = IntentDecision(ChatIntent.UNKNOWN, {})
         use_provider = False
@@ -232,9 +269,9 @@ class ChatOrchestrationService:
             if target_contract_id is not None:
                 search_arguments["contract_id"] = target_contract_id
             chunks = await run_in_threadpool(
-                self._rag.search,
+                self._search_rag_with_savepoint,
                 state["queries"],
-                **search_arguments,
+                search_arguments,
             )
             context = explicit_reference_context.copy()
             contract_chunk = next((chunk for chunk in chunks if chunk.contract_id), None)
@@ -258,17 +295,40 @@ class ChatOrchestrationService:
                 **explicit_reference_context,
             }
 
+    def _search_rag_with_savepoint(
+        self,
+        queries: list[str],
+        search_arguments: dict[str, Any],
+    ) -> list[RetrievedChunk]:
+        begin_nested = getattr(self._session, "begin_nested", None)
+        if begin_nested is None:
+            return self._rag.search(queries, **search_arguments)
+        with begin_nested():
+            return self._rag.search(queries, **search_arguments)
+
     async def _generate(self, state: ChatState) -> dict[str, Any]:
         chunks = state.get("retrieved_chunks", [])
         tool_result = state.get("tool_result")
         if state["route"] == RagRoute.GENERAL:
+            intent = state["decision"].intent
+            if intent == ChatIntent.GENERAL_CHAT:
+                return {"response": general_chat_response(state["question"])}
+            if intent == ChatIntent.NEEDS_CLARIFICATION:
+                return {"response": self._balance_clarification_response()}
+            if intent == ChatIntent.FOLLOW_UP:
+                return {"response": self._follow_up_response(state.get("previous_calculation"))}
             if looks_like_expense_simulation(state["question"]):
                 return {"response": self._invalid_simulation_response()}
             return {"response": self._unsupported_response()}
         tool_draft = explain_tool_result(state["question"], tool_result) if tool_result else None
         if not chunks:
             if state["route"] == RagRoute.RAG:
-                return {"response": self._rag_unavailable_response()}
+                return {
+                    "response": self._rag_unavailable_response(
+                        retrieval_failed=state.get("retrieval_failed", False),
+                        knowledge_types=state.get("knowledge_types", set()),
+                    )
+                }
             if tool_draft is None:
                 return {"response": self._unsupported_response()}
             tool_draft = await self._generate_tool_answer(
@@ -328,7 +388,12 @@ class ChatOrchestrationService:
         self.contract_resolution_source = "provider_argument" if "contractId" in arguments else None
         if (
             decision.intent
-            in {ChatIntent.CONTRACT, ChatIntent.CONTRACT_PAYMENT, ChatIntent.SCHEDULE}
+            in {
+                ChatIntent.CONTRACT,
+                ChatIntent.CONTRACT_DEPOSIT,
+                ChatIntent.CONTRACT_PAYMENT,
+                ChatIntent.SCHEDULE,
+            }
             and "contractId" not in arguments
         ):
             explicit_resolver = getattr(self._tools, "resolve_explicit_contract_id", None)
@@ -485,9 +550,22 @@ class ChatOrchestrationService:
         )
 
     @staticmethod
-    def _rag_unavailable_response() -> ChatResponse:
+    def _rag_unavailable_response(
+        *, retrieval_failed: bool, knowledge_types: set[KnowledgeType]
+    ) -> ChatResponse:
+        if retrieval_failed:
+            answer = "계약 조항을 조회하는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
+        elif KnowledgeType.CONTRACT_CLAUSE in knowledge_types:
+            answer = (
+                "현재 계약서에서 요청한 취소·환불·해지 조항을 확인하지 못했어요. "
+                "계약 상세의 원문을 확인하거나 업체에 문의해 주세요."
+            )
+        elif KnowledgeType.SERVICE_FAQ in knowledge_types:
+            answer = "관련 사용 방법을 찾지 못했어요. 계약 업로드, 지급 일정 또는 자금계획을 구체적으로 질문해 주세요."
+        else:
+            answer = "현재 확인할 수 있는 관련 정보를 찾지 못했어요. 질문을 조금 더 구체적으로 알려주세요."
         return ChatResponse(
-            answer="현재 확인할 수 있는 관련 근거가 없습니다. 계약 조건은 원문과 업체에 확인해 주세요.",
+            answer=answer,
             answer_type="NOT_FOUND",
             citations=[],
             calculation=None,
@@ -505,6 +583,75 @@ class ChatOrchestrationService:
         )
 
     @staticmethod
+    def _balance_clarification_response() -> ChatResponse:
+        return ChatResponse(
+            answer=(
+                "계약별로 아직 지급하지 않은 잔금을 말씀하시는 건가요, "
+                "아니면 모든 예정 지출을 제외한 예상 잔액을 말씀하시는 건가요?"
+            ),
+            answer_type="GENERAL",
+            citations=[],
+            calculation=None,
+            used_rag=False,
+        )
+
+    @staticmethod
+    def _follow_up_response(previous: dict[str, Any] | None) -> ChatResponse:
+        required_fields = {
+            "toolName",
+            "currentExpectedBalance",
+            "simulatedExpectedBalance",
+            "shortageAmount",
+            "calculatedAt",
+        }
+        if (
+            not previous
+            or previous.get("toolName") != "simulateAdditionalExpense"
+            or not required_fields.issubset(previous)
+        ):
+            return ChatResponse(
+                answer=(
+                    "어떤 지출이나 금액을 말씀하시는지 한 번 더 알려주세요. "
+                    "예: 가전제품 구매에 300만 원을 써도 될까?"
+                ),
+                answer_type="GENERAL",
+                citations=[],
+                calculation=None,
+                used_rag=False,
+            )
+        shortage = int(previous["shortageAmount"])
+        balance = int(previous["simulatedExpectedBalance"])
+        if shortage > 0:
+            answer = (
+                f"직전 추가 지출을 반영하면 예상 잔액이 {balance:,}원이고 "
+                f"{shortage:,}원이 부족해, 현재 계획 기준으로는 예산이 부족합니다."
+            )
+        else:
+            answer = (
+                f"현재 확정된 계약과 지급 일정을 기준으로는 직전 추가 지출을 반영해도 "
+                f"예상 잔액이 {balance:,}원 남아 예산 부족 상태는 아니에요. "
+                "다만 아직 확정되지 않은 계약이나 추가 비용은 반영되지 않았으니 함께 고려해 주세요."
+            )
+        return ChatResponse.model_validate(
+            {
+                "answer": answer,
+                "answerType": "CALCULATION",
+                "citations": [],
+                "calculation": {
+                    key: previous[key]
+                    for key in (
+                        "toolName",
+                        "currentExpectedBalance",
+                        "simulatedExpectedBalance",
+                        "shortageAmount",
+                        "calculatedAt",
+                    )
+                },
+                "usedRag": False,
+            }
+        )
+
+    @staticmethod
     def _to_response(draft: AnswerDraft) -> ChatResponse:
         return ChatResponse.model_validate(
             {
@@ -515,3 +662,26 @@ class ChatOrchestrationService:
                 "usedRag": False,
             }
         )
+
+
+def general_chat_response(message: str) -> ChatResponse:
+    normalized = " ".join(message.strip().split())
+    if any(word in normalized for word in ("고마워", "고맙습니다", "감사해", "감사합니다")):
+        answer = "도움이 되었다니 다행이에요. 다른 계약이나 예산도 궁금하면 물어보세요."
+    elif any(
+        phrase in normalized
+        for phrase in ("어떤 걸 물어볼 수 있어", "무엇을 물어볼 수 있어", "뭘 물어볼 수 있어")
+    ):
+        answer = (
+            "확정 계약의 금액과 취소 조건, 가까운 지급 일정, 남은 지출과 예상 잔액, "
+            "추가 지출 시뮬레이션을 물어볼 수 있어요."
+        )
+    else:
+        answer = "안녕하세요! 계약 내용, 지급 일정, 남은 예산에 관해 무엇이든 물어보세요."
+    return ChatResponse(
+        answer=answer,
+        answer_type="GENERAL",
+        citations=[],
+        calculation=None,
+        used_rag=False,
+    )

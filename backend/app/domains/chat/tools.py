@@ -49,6 +49,7 @@ class ChatToolRegistry:
         tools = {
             "getContractDetails": self._get_contract_details,
             "getContractDeposit": self._get_contract_deposit,
+            "getContractPayments": self._get_contract_payments,
             "getUpcomingPayments": self._get_upcoming_payments,
             "getFinanceSummary": self._get_finance_summary,
             "simulateAdditionalExpense": self._simulate_additional_expense,
@@ -237,6 +238,65 @@ class ChatToolRegistry:
             },
             [self._payment_evidence(contract, payment)] if payment.source_text else [],
         )
+
+    def _get_contract_payments(
+        self,
+        arguments: dict[str, Any],
+        user_id: UUID,
+    ) -> ToolResultView:
+        contract_id = self._optional_uuid(arguments.get("contractId"))
+        plan = self._plans.get_current_for_user(user_id)
+        if plan is None:
+            return self._failure(
+                "NOT_FOUND",
+                "getContractPayments",
+                "현재 웨딩 계획을 찾을 수 없습니다.",
+            )
+        contracts = self._contracts.list_confirmed(plan.id)
+        if not contracts:
+            return self._failure(
+                "NOT_FOUND",
+                "getContractPayments",
+                "아직 확정된 계약이 없습니다.",
+            )
+        if contract_id is not None:
+            contracts = [contract for contract in contracts if contract.id == contract_id]
+            if not contracts:
+                return self._failure(
+                    "NOT_FOUND",
+                    "getContractPayments",
+                    "요청한 확정 계약을 찾을 수 없습니다.",
+                )
+
+        candidates = [
+            (contract, payment)
+            for contract in contracts
+            for payment in contract.payments
+            if payment.status.value == "UNPAID"
+        ]
+        if not candidates:
+            return self._failure(
+                "NOT_FOUND",
+                "getContractPayments",
+                "아직 등록된 미지급 잔금이 없습니다.",
+            )
+        payments = [
+            {
+                "contractId": str(contract.id),
+                "company": contract.company,
+                "name": payment.name,
+                "amount": payment.amount,
+                "dueDate": payment.due_date.isoformat() if payment.due_date else None,
+                "status": payment.status.value,
+            }
+            for contract, payment in candidates
+        ]
+        evidence = [
+            self._payment_evidence(contract, payment)
+            for contract, payment in candidates
+            if payment.source_text
+        ]
+        return self._success("getContractPayments", {"payments": payments}, evidence)
 
     def _get_finance_summary(
         self,

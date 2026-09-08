@@ -24,6 +24,9 @@ class FakeEmbeddingClient:
         self.calls.append(batch)
         return [[1.0, 0.0, 0.0] for _ in batch]
 
+    def close(self) -> None:
+        pass
+
 
 class FakeScalars:
     def __init__(self, items) -> None:

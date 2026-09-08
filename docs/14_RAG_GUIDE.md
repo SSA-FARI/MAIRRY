@@ -12,9 +12,10 @@ active 청크를 제한한다. 요청의 ID나 질문 속 ID를 접근 범위로
 
 ## 저장과 색인
 
-현재 PostgreSQL 이미지에 pgvector가 없으므로 별도 vector 서버를 추가하지 않는다. embedding은
-JSONB로 영속화하고, metadata로 후보를 제한한 다음 application layer에서 cosine similarity를
-계산한다. 문서 적재와 검색 질문은 모두 SSAFY GMS의 `text-embedding-3-small`을 사용한다. 기본
+Compose의 PostgreSQL 16은 pgvector 확장 포함 이미지로 실행한다. 기존 JSONB embedding은 안전한
+rollback과 데이터 보존을 위해 유지하고, 검색에는 1536차원 `embedding_vector`를 사용한다. metadata
+범위 조건, cosine distance 정렬, score threshold와 top-k는 모두 SQL에서 적용한다. 문서 적재와 검색
+질문은 모두 SSAFY GMS의 `text-embedding-3-small`을 사용한다. 기본
 벡터 차원은 1536이며 각 청크에 `embedding_model`, `embedding_version`, `embedding_dimensions`를
 저장하고 동일한 profile만 검색해 다른 모델의 벡터가 섞이지 않게 한다.
 
@@ -27,14 +28,18 @@ EMBEDDING_DIMENSIONS=1536
 ```
 
 계약 확정·수정 트랜잭션은 `rag_index_jobs`에 PENDING 작업을 멱등 등록한다. API 응답 후 background
-task가 INDEXING → INDEXED/FAILED 상태를 기록한다. 새 버전 저장이 완료될 때 이전 청크를 inactive로
-전환하므로 두 버전이 동시에 검색되지 않는다. 계약 삭제는 청크를 즉시 삭제하고 Contract 상태를
-함께 조회하는 검색 조건으로 잔존 노출도 방지한다.
+task가 즉시 처리를 시도하고, lifespan reconciliation loop가 PENDING/FAILED 및 lease가 만료된
+INDEXING 작업을 계속 복구한다. claim은 짧은 `FOR UPDATE SKIP LOCKED` transaction에서 attempts와
+`locked_at`을 저장한 뒤 commit하므로 embedding 동안 row lock을 잡지 않는다. 실패는 독립 Session에서
+안전한 error code와 exponential backoff 시각을 기록한다. 새 버전 저장이 완료될 때 이전 청크를
+inactive로 전환하므로 두 버전이 동시에 검색되지 않는다. 계약 삭제는 청크를 즉시 삭제하고 Contract
+상태를 함께 조회하는 검색 조건으로 잔존 노출도 방지한다.
 
-FAILED/PENDING 작업은 최대 3회까지 다음 명령으로 재처리할 수 있다.
+자동 복구 외에 운영자는 다음 명령으로 한 batch를 즉시 처리할 수 있다.
 
 ```powershell
 python -m app.domains.rag.worker
+python -m app.domains.rag.worker --limit 100
 python -m app.domains.rag.worker --contract-id <UUID>
 ```
 
@@ -125,29 +130,22 @@ MAIRRY는 크게 아래 4가지 영역으로 구성된다.
 | AI 문서 분석      | OpenAI-compatible API        |
 | Embedding     | `text-embedding-3-small`     |
 | RAG 저장        | PostgreSQL `document_chunks` |
-| Vector 검색     | Python cosine similarity     |
+| Vector 검색     | PostgreSQL pgvector cosine distance |
 | Chat Workflow | LangGraph                    |
 | 대화 저장         | PostgreSQL                   |
-| Background 처리 | FastAPI `BackgroundTasks`    |
+| Background 처리 | `BackgroundTasks` + lifespan reconciliation |
 
 ### 중요한 특징
 
-현재는
-
-```text
-pgvector / Pinecone / Chroma
-```
-
-같은 Vector DB를 사용하지 않는다.
-
-대신
+현재는 별도 Pinecone/Chroma 서버 대신 PostgreSQL pgvector를 사용한다.
 
 ```text
 PostgreSQL
     ↓
 document_chunks
     ├─ content
-    ├─ embedding(JSONB)
+    ├─ embedding(JSONB, 보존·rollback용)
+    ├─ embedding_vector(vector(1536), 검색용)
     ├─ contract_id
     ├─ wedding_plan_id
     └─ metadata
@@ -158,9 +156,9 @@ document_chunks
 검색할 때는
 
 ```text
-SQL로 후보 필터링
-→ Python에서 cosine similarity 계산
-→ Top-K 선택
+SQL로 metadata 후보 필터링
+→ pgvector cosine distance 정렬
+→ SQL score threshold + Top-K
 ```
 
 방식이다.
@@ -851,11 +849,7 @@ Seed 삭제 동기화
 
 이미지/OCR 기반 RAG
 
-RAG 작업 재시도
-
 대화 History UI 복원
-
-Background 작업 복구
 
 계약 수정 후 RAG 동기화
 ```
@@ -867,13 +861,9 @@ Background 작업 복구
 ```text
 실제 사용자 인증
 
-pgvector / Vector DB
-
 LangGraph Checkpointer
 
-Durable Queue
-
-자동 Retry Worker
+외부 Durable Queue
 
 Chat History 조회 API
 ```

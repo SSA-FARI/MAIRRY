@@ -13,6 +13,7 @@
 | `cancellation_terms` | 취소·환불 등 계약조건과 근거 |
 | `documents` | 원본 계약서/견적서와 AI 분석 결과 |
 | `document_chunks` | 계약서 RAG 검색용 데이터 |
+| `rag_index_jobs` | 계약 청크 생성·임베딩의 lease 및 재시도 상태 |
 | `chat_conversations` | 사용자·WeddingPlan 범위의 AI 대화 |
 | `chat_messages` | 역할과 마지막 참조 계약 문맥을 포함한 대화 메시지 |
 
@@ -562,6 +563,7 @@ CancellationTerm
 | `page_number` | INT | O | - | 원본 페이지 |
 | `content` | TEXT | X | - | Chunk 텍스트 |
 | `embedding` | JSONB | X | - | embedding vector |
+| `embedding_vector` | VECTOR(1536) | O | - | pgvector cosine 검색용 vector; 변환 불가 legacy 행은 NULL |
 | `embedding_model` | VARCHAR(100) | X | INDEX | 기본 `text-embedding-3-small` |
 | `embedding_version` | VARCHAR(32) | X | INDEX | embedding profile 버전 |
 | `embedding_dimensions` | INT | X | INDEX | vector 차원, 기본 1536 |
@@ -573,6 +575,25 @@ CancellationTerm
 | `created_at` | TIMESTAMPTZ | X | DEFAULT now() | 생성일 |
 
 `document_chunks.wedding_plan_id`와 원본 `documents.wedding_plan_id`는 반드시 일치해야 하며, 이 일치 여부는 저장 시 서비스 레이어에서 검증한다.
+
+## rag_index_jobs
+
+계약 확정·수정 transaction에서 PENDING 작업을 등록한다. worker는 짧은
+`FOR UPDATE SKIP LOCKED` transaction으로 작업을 claim하고 embedding 중에는 row lock을 유지하지
+않는다.
+
+| 컬럼 | 타입 | NULL | 제약조건 | 설명 |
+| --- | --- | --- | --- | --- |
+| `id` | UUID | X | PK | 작업 식별자 |
+| `contract_id` | UUID | X | FK | 대상 계약 |
+| `document_version` | INT | X | UNIQUE 조합 | 계약 색인 버전 |
+| `status` | VARCHAR(16) | X | INDEX | PENDING / INDEXING / INDEXED / FAILED |
+| `attempts` | INT | X | - | claim이 commit된 누적 시도 횟수 |
+| `error_code` | VARCHAR(32) | O | - | 민감정보가 없는 마지막 오류 종류 |
+| `locked_at` | TIMESTAMPTZ | O | INDEX | 현재 lease 시작 시각 |
+| `next_attempt_at` | TIMESTAMPTZ | O | INDEX | backoff 이후 재시도 가능 시각 |
+| `created_at` | TIMESTAMPTZ | X | DEFAULT now() | 생성 시각 |
+| `updated_at` | TIMESTAMPTZ | X | DEFAULT now() | 갱신 시각 |
 
 ## chat_conversations / chat_messages
 

@@ -1,4 +1,4 @@
-export type AnswerType = "CONTRACT" | "CALCULATION" | "NOT_FOUND" | "RAG" | "MIXED";
+export type AnswerType = "GENERAL" | "CONTRACT" | "CALCULATION" | "NOT_FOUND" | "RAG" | "MIXED";
 
 export interface Citation {
   contractId: string | null;

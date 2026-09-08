@@ -54,6 +54,7 @@ export function ChatPage() {
   const nextId = useRef(1);
   const controller = useRef<AbortController | null>(null);
   const conversationEnd = useRef<HTMLDivElement | null>(null);
+  const composerInput = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
     setConversationId(window.localStorage.getItem(CONVERSATION_STORAGE_KEY));
@@ -109,8 +110,10 @@ export function ChatPage() {
     window.localStorage.removeItem(CONVERSATION_STORAGE_KEY);
     setConversationId(null);
     setMessages([INITIAL_MESSAGE]);
+    setInput("");
     setError(null);
     setFailedQuestion(null);
+    composerInput.current?.focus();
   }
 
   return (
@@ -119,15 +122,26 @@ export function ChatPage() {
 
       <main className="chat-main">
         <section className="chat-intro" aria-labelledby="chat-title">
-          <div>
+          <div className="chat-intro-copy">
             <span className="chat-eyebrow">GROUNDED WEDDING ASSISTANT</span>
             <h1 id="chat-title">계약과 자금, 바로 물어보세요</h1>
+            <p>
+              확정된 계약 원문과 서버 계산 결과만 사용합니다.
+              <br />
+              답변의 근거도 함께 확인할 수 있어요.
+            </p>
           </div>
-          <p>
-            확정된 계약 원문과 서버 계산 결과만 사용합니다.
-            <br />
-            답변의 근거도 함께 확인할 수 있어요.
-          </p>
+          <button
+            className="chat-new-question-button"
+            type="button"
+            disabled={sending}
+            onClick={startNewConversation}
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            새 질문
+          </button>
         </section>
 
         <div className="chat-layout">
@@ -181,6 +195,7 @@ export function ChatPage() {
               </label>
               <textarea
                 id="chat-message"
+                ref={composerInput}
                 value={input}
                 maxLength={2000}
                 rows={2}
@@ -207,9 +222,6 @@ export function ChatPage() {
           <aside className="chat-guide" aria-labelledby="suggestions-title">
             <span className="chat-eyebrow">QUICK QUESTIONS</span>
             <h2 id="suggestions-title">이렇게 물어보세요</h2>
-            <button type="button" disabled={sending} onClick={startNewConversation}>
-              새 대화
-            </button>
             <div className="chat-suggestions">
               {SUGGESTED_QUESTIONS.map((question) => (
                 <button
@@ -238,6 +250,7 @@ export function ChatPage() {
 }
 
 function ResponseEvidence({ response }: { response: ChatResponse }) {
+  if (response.answerType === "GENERAL") return null;
   return (
     <div className="chat-evidence">
       {response.answerType === "NOT_FOUND" && (

@@ -11,6 +11,18 @@ def test_fallback_classifies_supported_intents() -> None:
     assert classify_message("오늘 날씨 알려줘").intent == ChatIntent.UNKNOWN
 
 
+@pytest.mark.parametrize("message", ["안녕", "안녕하세요", "고마워", "무엇을 물어볼 수 있어?"])
+def test_fallback_classifies_general_chat(message: str) -> None:
+    assert classify_message(message).intent == ChatIntent.GENERAL_CHAT
+
+
+def test_fallback_distinguishes_balance_contract_payment_and_follow_up() -> None:
+    assert classify_message("남은 잔액 알려줘").intent == ChatIntent.FINANCE_SUMMARY
+    assert classify_message("현재 우리 잔금 알려줘").intent == ChatIntent.NEEDS_CLARIFICATION
+    assert classify_message("웨딩홀 잔금 알려줘").intent == ChatIntent.CONTRACT_PAYMENT
+    assert classify_message("그럼 300만원 써도 되는 거야?").intent == ChatIntent.FOLLOW_UP
+
+
 def test_fallback_extracts_korean_expense_amount_without_recalculating_it() -> None:
     decision = classify_message("가전 비용 300만 원을 추가하면 괜찮아?")
 

@@ -4,7 +4,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.application.chat_orchestration import ChatOrchestrationService
+from ai.chat_agent.fallback import classify_message
+from ai.chat_agent.intent import ChatIntent
+from app.application.chat_orchestration import ChatOrchestrationService, general_chat_response
 from app.application.chat_provider import build_chat_provider
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
@@ -21,6 +23,11 @@ async def chat(
     db: Annotated[Session, Depends(get_db)],
     configuration: Annotated[Settings, Depends(get_settings)],
 ) -> ChatResponse:
+    if (
+        payload.conversation_id is None
+        and classify_message(payload.message).intent == ChatIntent.GENERAL_CHAT
+    ):
+        return general_chat_response(payload.message)
     conversations = ChatConversationService(db)
     try:
         turn = conversations.begin_turn(
@@ -50,6 +57,7 @@ async def chat(
             referenced_contract_id=turn.referenced_contract_id,
             referenced_document_id=turn.referenced_document_id,
             referenced_vendor_name=turn.referenced_vendor_name,
+            previous_calculation=turn.previous_calculation,
         )
         message_id = conversations.complete_turn(
             turn,
@@ -57,6 +65,7 @@ async def chat(
             referenced_contract_id=service.referenced_contract_id,
             referenced_document_id=service.referenced_document_id,
             referenced_vendor_name=service.referenced_vendor_name,
+            calculation_context=service.calculation_context,
         )
         logger.info(
             "Chat turn completed: conversationId=%s historyMessageCount=%s "

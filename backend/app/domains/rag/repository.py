@@ -1,13 +1,14 @@
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.orm import Session
 
-from ai.rag.embeddings import cosine_similarity
+from ai.rag.embeddings import DEFAULT_EMBEDDING_DIMENSIONS
 from ai.rag.schemas import KnowledgeType, RetrievedChunk
 from app.core.enums import ContractStatus
 from app.domains.contracts.models import Contract
-from app.domains.rag.models import DocumentChunk, RagIndexJob
+from app.domains.rag.models import DocumentChunk, RagIndexJob, RagIndexJobStatus
 
 
 class RagRepository:
@@ -22,8 +23,11 @@ class RagRepository:
             )
         )
         if existing is not None:
-            existing.status = "PENDING"
+            existing.status = RagIndexJobStatus.PENDING.value
+            existing.attempts = 0
             existing.error_code = None
+            existing.locked_at = None
+            existing.next_attempt_at = None
             return existing
         job = RagIndexJob(contract_id=contract_id, document_version=document_version)
         self._session.add(job)
@@ -37,30 +41,46 @@ class RagRepository:
         )
         return int(latest or 0) + 1
 
-    def get_pending_job(self, contract_id: UUID) -> RagIndexJob | None:
-        return self._session.scalar(
+    def claim_retryable_job(
+        self,
+        *,
+        now: datetime,
+        stale_before: datetime,
+        max_attempts: int,
+        contract_id: UUID | None = None,
+    ) -> RagIndexJob | None:
+        ready_to_retry = and_(
+            RagIndexJob.status.in_(
+                [RagIndexJobStatus.PENDING.value, RagIndexJobStatus.FAILED.value]
+            ),
+            or_(RagIndexJob.next_attempt_at.is_(None), RagIndexJob.next_attempt_at <= now),
+        )
+        stale_claim = and_(
+            RagIndexJob.status == RagIndexJobStatus.INDEXING.value,
+            or_(RagIndexJob.locked_at.is_(None), RagIndexJob.locked_at < stale_before),
+        )
+        statement = (
             select(RagIndexJob)
             .where(
-                RagIndexJob.contract_id == contract_id,
-                RagIndexJob.status.in_(["PENDING", "FAILED"]),
+                RagIndexJob.attempts < max_attempts,
+                or_(ready_to_retry, stale_claim),
             )
-            .order_by(RagIndexJob.document_version.desc())
+            .order_by(RagIndexJob.created_at, RagIndexJob.id)
             .limit(1)
-            .with_for_update()
+            .with_for_update(skip_locked=True)
         )
-
-    def list_retryable_contract_ids(self, limit: int = 100) -> list[UUID]:
-        return list(
-            self._session.scalars(
-                select(RagIndexJob.contract_id)
-                .where(
-                    RagIndexJob.status.in_(["PENDING", "FAILED"]),
-                    RagIndexJob.attempts < 3,
-                )
-                .order_by(RagIndexJob.created_at)
-                .limit(limit)
-            ).all()
-        )
+        if contract_id is not None:
+            statement = statement.where(RagIndexJob.contract_id == contract_id)
+        job = self._session.scalar(statement)
+        if job is None:
+            return None
+        job.status = RagIndexJobStatus.INDEXING.value
+        job.attempts += 1
+        job.error_code = None
+        job.locked_at = now
+        job.next_attempt_at = None
+        self._session.flush()
+        return job
 
     def replace_contract_chunks(
         self,
@@ -97,6 +117,12 @@ class RagRepository:
         embedding_dimensions: int,
         contract_id: UUID | None = None,
     ) -> list[RetrievedChunk]:
+        if not knowledge_types:
+            return []
+        if embedding_dimensions != DEFAULT_EMBEDDING_DIMENSIONS:
+            raise ValueError(f"DB vector search requires {DEFAULT_EMBEDDING_DIMENSIONS} dimensions")
+        if len(query_embedding) != embedding_dimensions:
+            raise ValueError("Query embedding dimension does not match the configured profile")
         # Scope is applied in SQL before vectors or content leave persistence.
         global_types = knowledge_types - {KnowledgeType.CONTRACT_CLAUSE}
         scope_conditions = []
@@ -119,25 +145,26 @@ class RagRepository:
                     DocumentChunk.contract_id.is_(None),
                 )
             )
+        distance = DocumentChunk.embedding_vector.cosine_distance(query_embedding)
+        score = func.greatest(0.0, func.least(1.0, 1.0 - distance)).label("score")
         statement = (
-            select(DocumentChunk)
+            select(DocumentChunk, score)
             .outerjoin(Contract, DocumentChunk.contract_id == Contract.id)
             .where(
                 DocumentChunk.active.is_(True),
+                DocumentChunk.embedding_vector.is_not(None),
                 DocumentChunk.embedding_model == embedding_model,
                 DocumentChunk.embedding_version == embedding_version,
                 DocumentChunk.embedding_dimensions == embedding_dimensions,
                 or_(*scope_conditions),
+                distance <= 1.0 - threshold,
             )
+            .order_by(distance.asc(), DocumentChunk.id)
+            .limit(top_k)
         )
         if contract_id is not None:
             statement = statement.where(DocumentChunk.contract_id == contract_id)
-        rows = self._session.scalars(statement).all()
-        ranked = sorted(
-            ((row, cosine_similarity(query_embedding, row.embedding)) for row in rows),
-            key=lambda item: item[1],
-            reverse=True,
-        )
+        rows = self._session.execute(statement).all()
         return [
             RetrievedChunk(
                 chunk_id=row.chunk_id,
@@ -148,11 +175,10 @@ class RagRepository:
                 clause_title=row.clause_title,
                 page=row.page_number,
                 chunk_index=row.chunk_index,
-                score=score,
+                score=float(score_value),
                 document_id=row.document_id,
                 contract_id=row.contract_id,
                 document_version=row.document_version,
             )
-            for row, score in ranked[:top_k]
-            if score >= threshold
+            for row, score_value in rows
         ]

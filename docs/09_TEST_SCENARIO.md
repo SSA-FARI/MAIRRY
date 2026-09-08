@@ -166,6 +166,12 @@ Tool 결과: dueDate=2027-04-30, amount=20000000
   `skippedUnchanged`로 기록하며 embedding API를 다시 호출하지 않는다.
 - 시작 로그에는 embedding model/version/dimensions 및 vector 개수만 있고 질문·청크 원문,
   API key, vector 배열은 없다.
+- RAG 검색 SQL은 active/profile/WeddingPlan/GLOBAL 범위를 먼저 제한하고 pgvector cosine distance
+  `ORDER BY`와 `LIMIT top-k`를 DB에서 수행한다. 다른 WeddingPlan 청크는 결과에 포함되지 않는다.
+- 서버 시작 직후와 실행 중 주기 reconciliation에서 PENDING/FAILED job을 처리하고, lease가 만료된
+  INDEXING job은 재처리한다. 최근 INDEXING 및 최대 attempts에 도달한 job은 중복 처리하지 않는다.
+- 둘 이상의 worker가 동시에 조회해도 `FOR UPDATE SKIP LOCKED` claim으로 같은 job을 중복 claim하지
+  않으며, embedding 호출 중에는 job row lock을 유지하지 않는다.
 
 ## 데모 전 체크리스트
 

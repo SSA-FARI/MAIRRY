@@ -128,6 +128,7 @@ def ingest_records(
         current.document_version = record.version
         current.content = text
         current.embedding = vector
+        current.embedding_vector = vector
         current.embedding_model = embedding_client.model_name
         current.embedding_version = embedding_client.version
         current.embedding_dimensions = embedding_client.dimensions
@@ -225,6 +226,7 @@ def ingest_configured_seed(configuration: Settings = settings) -> dict[str, dict
         raise
     finally:
         session.close()
+        client.close()
 
 
 def main() -> None:
@@ -258,6 +260,7 @@ def main() -> None:
         raise
     finally:
         session.close()
+        client.close()
     print(f"RAG seed ingestion completed - Embedding model: {client.model_name}")
 
 

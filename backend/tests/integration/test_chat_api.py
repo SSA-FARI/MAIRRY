@@ -280,14 +280,30 @@ def test_chat_golden_path_uses_owned_contract_and_finance_data(
             "/api/chat",
             json={"message": "가전 비용 300만 원을 추가하면 괜찮아?"},
         )
+        follow_up = client.post(
+            "/api/chat",
+            json={
+                "conversationId": simulation.json()["conversationId"],
+                "message": "그럼 300만원 써도 되는 거야?",
+            },
+        )
         cancellation = client.post("/api/chat", json={"message": "웨딩홀 취소 조건 알려줘"})
 
-        assert schedule.status_code == finance.status_code == simulation.status_code == 200
+        assert (
+            schedule.status_code
+            == finance.status_code
+            == simulation.status_code
+            == follow_up.status_code
+            == 200
+        )
         assert "2099-04-30" in schedule.json()["answer"]
         assert schedule.json()["citations"][0]["contractId"] == str(contract_id)
         assert "비공개" not in str(schedule.json())
         assert finance.json()["calculation"]["expectedBalance"] == 10_000_000
         assert simulation.json()["calculation"]["simulatedExpectedBalance"] == 7_000_000
+        assert follow_up.json()["conversationId"] == simulation.json()["conversationId"]
+        assert follow_up.json()["calculation"]["simulatedExpectedBalance"] == 7_000_000
+        assert "예산 부족 상태는 아니" in follow_up.json()["answer"]
         assert cancellation.json()["citations"][0]["sourceText"].startswith("예식 90일 전")
         assert len(rag_calls) == 1
         with Session(database_engine) as session:

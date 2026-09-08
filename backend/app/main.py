@@ -1,6 +1,7 @@
+import asyncio
 import logging
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import Any
 
 from fastapi import FastAPI
@@ -14,6 +15,8 @@ from app.domains.chat.router import router as chat_router
 from app.domains.contracts.router import router as contracts_router
 from app.domains.documents.router import router as documents_router
 from app.domains.finance.router import router as finance_router
+from app.domains.rag.reconciliation import run_reconciliation_loop
+from app.domains.rag.service import close_embedding_http_clients
 from app.domains.wedding_plan.router import router as wedding_plan_router
 from app.domains.wedding_plan.schemas import WeddingPlanRead, WeddingPlanUpsert
 
@@ -32,7 +35,20 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
                 "RAG seed startup ingestion failed: errorType=%s",
                 type(exc).__name__,
             )
-    yield
+    reconciliation_task: asyncio.Task[None] | None = None
+    if settings.rag_enabled and settings.rag_index_reconciliation_enabled:
+        reconciliation_task = asyncio.create_task(
+            run_reconciliation_loop(settings),
+            name="rag-index-reconciliation",
+        )
+    try:
+        yield
+    finally:
+        if reconciliation_task is not None:
+            reconciliation_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await reconciliation_task
+        close_embedding_http_clients()
 
 
 class MairryAPI(FastAPI):

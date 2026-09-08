@@ -7,6 +7,10 @@ TOOLS = {
         "description": "특정 확정 계약의 계약금·예약금 지급항목과 상태를 조회합니다.",
         "required": ["contractId"],
     },
+    "getContractPayments": {
+        "description": "확정 계약의 미지급 잔금과 지급항목을 조회합니다.",
+        "required": [],
+    },
     "getUpcomingPayments": {
         "description": "확정된 향후 지급 일정을 조회합니다.",
         "required": [],

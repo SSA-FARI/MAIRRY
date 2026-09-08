@@ -50,6 +50,7 @@ class AssetCategory(StrEnum):
 
 
 class AnswerType(StrEnum):
+    GENERAL = "GENERAL"
     CONTRACT = "CONTRACT"
     CALCULATION = "CALCULATION"
     NOT_FOUND = "NOT_FOUND"

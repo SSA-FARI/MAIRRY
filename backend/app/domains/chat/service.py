@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -18,6 +19,7 @@ class ConversationTurn:
     referenced_contract_id: UUID | None
     referenced_document_id: UUID | None
     referenced_vendor_name: str | None
+    previous_calculation: dict[str, Any] | None
 
 
 class ChatConversationService:
@@ -65,6 +67,7 @@ class ChatConversationService:
             referenced_contract_id=_optional_uuid(context.get("referencedContractId")),
             referenced_document_id=_optional_uuid(context.get("referencedDocumentId")),
             referenced_vendor_name=_optional_string(context.get("referencedVendorName")),
+            previous_calculation=_optional_mapping(context.get("lastCalculation")),
         )
 
     def complete_turn(
@@ -75,6 +78,7 @@ class ChatConversationService:
         referenced_contract_id: UUID | None,
         referenced_document_id: UUID | None,
         referenced_vendor_name: str | None,
+        calculation_context: dict[str, Any] | None = None,
     ) -> UUID:
         message = ChatMessage(
             conversation_id=turn.conversation.id,
@@ -90,6 +94,7 @@ class ChatConversationService:
                     if referenced_document_id
                     else None,
                     "referencedVendorName": referenced_vendor_name,
+                    "lastCalculation": calculation_context,
                 }.items()
                 if value is not None
             },
@@ -111,3 +116,7 @@ def _optional_uuid(value: object) -> UUID | None:
 
 def _optional_string(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
+
+
+def _optional_mapping(value: object) -> dict[str, Any] | None:
+    return value if isinstance(value, dict) and value else None

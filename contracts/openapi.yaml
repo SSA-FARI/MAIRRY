@@ -433,7 +433,7 @@ components:
         conversationId: {type: [string, "null"], format: uuid}
         messageId: {type: [string, "null"], format: uuid}
         answer: {type: string}
-        answerType: {type: string, enum: [CONTRACT, CALCULATION, NOT_FOUND, RAG, MIXED]}
+        answerType: {type: string, enum: [GENERAL, CONTRACT, CALCULATION, NOT_FOUND, RAG, MIXED]}
         citations: {type: array, items: {$ref: "#/components/schemas/Citation"}}
         calculation: {oneOf: [{$ref: "#/components/schemas/Calculation"}, {type: "null"}]}
         usedRag: {type: boolean, default: false}

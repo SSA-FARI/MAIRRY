@@ -486,8 +486,14 @@ RAG 응답의 citation은 `sourceType`, 문서 `title`, `clauseTitle`, `page`, �
 `documentId`/`contractId`를 제공한다. 공용 FAQ·도메인 지식은 계약 링크를 만들지 않도록 두 ID가
 null이다. `usedRag`는 검색 근거를 실제 답변에 사용했을 때만 true다.
 
-answerType은 CONTRACT, CALCULATION, NOT_FOUND, RAG, MIXED다. 지원하지 않는 질문과 Tool 실패에서는 임의의
-금액/날짜를 생성하지 않는다. 요청 오류 400, AI 실패 및 대체 응답 불가 502.
+answerType은 GENERAL, CONTRACT, CALCULATION, NOT_FOUND, RAG, MIXED다. GENERAL은 인사·도움말·
+명확화처럼 계약 또는 계산 근거가 필요 없는 응답이며 citation과 calculation은 비어 있다. 지원하지
+않는 질문과 Tool 실패에서는 임의의 금액/날짜를 생성하지 않는다. 요청 오류 400, AI 실패 및 대체
+응답 불가 502.
+
+직전 추가 지출 계산은 해당 대화의 assistant message context에 구조화된 값으로 저장한다. `그럼`,
+`그 금액`, `써도 돼?` 같은 후속 질문은 같은 `conversationId`에서만 이 값을 복원하며, 답변 문자열의
+금액을 다시 파싱하지 않는다.
 
 `예약금`, `계약금`, `선금`, `첫 납부금`, `초기 납부금`, `1차 납부금`은 Payment 이름의 계약금
 alias다. `getContractDeposit`은 현재 계획의 확정 계약에서 이 이름과 일치하는 단 하나의 Payment만

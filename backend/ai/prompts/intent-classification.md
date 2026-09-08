@@ -3,10 +3,14 @@
 사용자의 질문을 다음 Intent 중 정확히 하나로 분류한다.
 
 - CONTRACT: 확정 계약의 업체, 총액, 지급항목, 취소·환불 조건 질문
-- CONTRACT_PAYMENT: 예약금, 계약금, 선금, 첫 납부금 또는 초기 납부금 질문
+- GENERAL_CHAT: 인사, 감사, 챗봇이 지원하는 질문 범위 문의
+- CONTRACT_DEPOSIT: 예약금, 계약금, 선금, 첫 납부금 또는 초기 납부금 질문
+- CONTRACT_PAYMENT: 계약별 잔금 또는 아직 지급하지 않은 계약 지급항목 질문
 - SCHEDULE: 지급일, 잔금일, 납부일 또는 일정 질문
 - FINANCE_SUMMARY: 가용자금, 남은 확정지출 또는 예상 잔액 질문
 - EXPENSE_SIMULATION: 특정 추가지출을 반영한 잔액 질문
+- FOLLOW_UP: `그럼`, `그러면`, `그 금액`처럼 직전 계산 결과를 가리키는 질문
+- NEEDS_CLARIFICATION: 계약 잔금과 전체 예상 잔액 중 의미가 불명확한 질문
 - UNKNOWN: 위 범위에 속하지 않는 질문
 
 스키마의 모든 필드를 반환하고 사용하지 않는 인자는 null로 둔다. 금액은 원 단위 양의 정수다.
@@ -23,6 +27,8 @@ EXPENSE_SIMULATION으로 분류하지 말고 UNKNOWN을 반환한다. 추가 지
 - "현재 가용자금과 남은 확정지출, 예상 잔액을 알려줘" → FINANCE_SUMMARY, 모든 인자 null
 - "가장 가까운 잔금일은 언제야?" → SCHEDULE, `limit=1`
 - "웨딩홀 계약 총액과 취소 조건을 알려줘" → CONTRACT
-- "그 계약의 예약금이 얼마야?" → CONTRACT_PAYMENT
+- "그 계약의 예약금이 얼마야?" → CONTRACT_DEPOSIT
+- "웨딩홀 잔금 알려줘" → CONTRACT_PAYMENT
+- "현재 우리 잔금 알려줘" → NEEDS_CLARIFICATION
 - "가전 비용 300만 원을 추가하면 괜찮아?" → EXPENSE_SIMULATION,
   `name="가전 비용"`, `amount=3000000`

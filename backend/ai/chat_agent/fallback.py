@@ -13,19 +13,44 @@ _AMOUNT_PATTERN = re.compile(
 )
 _SMALL_UNIT_MULTIPLIERS = {"": 1, "십": 10, "백": 100, "천": 1_000}
 _SMALL_NUMBER_PATTERN = re.compile(r"(?P<number>\d[\d,]*)\s*(?P<unit>천|백|십)?")
-_SIMULATION_ACTIONS = ("추가", "더 쓰", "더하", "구매", "사도", "지출", "사용")
+_SIMULATION_ACTIONS = ("추가", "더 쓰", "더하", "구매", "사도", "써도", "지출", "사용")
+_GENERAL_GREETINGS = ("안녕", "안녕하세요", "반가워", "반가워요", "반갑습니다")
+_GENERAL_THANKS = ("고마워", "고마워요", "고맙습니다", "감사해", "감사해요", "감사합니다")
+_GENERAL_HELP = ("어떤 걸 물어볼 수 있어", "무엇을 물어볼 수 있어", "뭘 물어볼 수 있어")
+_FOLLOW_UP_MARKERS = ("그럼", "그러면", "그래도", "그 금액", "그거")
+_CALCULATION_FOLLOW_UP_WORDS = ("써도", "사용해도", "괜찮", "부족", "얼마 남", "잔액", "금액")
+_CONTRACT_TARGETS = ("계약별", "계약", "웨딩홀", "스튜디오", "드레스", "메이크업", "업체")
 
 
 def classify_message(message: str) -> IntentDecision:
     normalized = " ".join(message.strip().split())
     contract_id = _extract_contract_id(normalized)
 
+    general_phrase = normalized.rstrip("!?., ")
+    if (
+        general_phrase in _GENERAL_GREETINGS + _GENERAL_THANKS
+        or _contains_any(normalized, _GENERAL_HELP)
+    ):
+        return _decision(ChatIntent.GENERAL_CHAT)
+
+    if _contains_any(normalized, _FOLLOW_UP_MARKERS) and _contains_any(
+        normalized, _CALCULATION_FOLLOW_UP_WORDS
+    ):
+        return _decision(ChatIntent.FOLLOW_UP)
+
+    if (
+        "잔금" in normalized
+        and "잔금일" not in normalized
+        and not _contains_any(normalized, _CONTRACT_TARGETS)
+    ):
+        return _decision(ChatIntent.NEEDS_CLARIFICATION)
+
     if _contains_any(
         normalized,
         ("예약금", "계약금", "선금", "첫 납부금", "초기 납부금", "1차 납부금"),
     ):
         arguments = {"contractId": contract_id} if contract_id is not None else {}
-        return _decision(ChatIntent.CONTRACT_PAYMENT, arguments)
+        return _decision(ChatIntent.CONTRACT_DEPOSIT, arguments)
 
     if looks_like_expense_simulation(normalized):
         amount_matches = list(_AMOUNT_PATTERN.finditer(normalized))
@@ -45,7 +70,15 @@ def classify_message(message: str) -> IntentDecision:
 
     if _contains_any(
         normalized,
-        ("남은 금액", "남은 지출", "예상 잔액", "가용 자금", "가용자금", "자금 현황"),
+        (
+            "남은 금액",
+            "남은 지출",
+            "남은 잔액",
+            "예상 잔액",
+            "가용 자금",
+            "가용자금",
+            "자금 현황",
+        ),
     ):
         return _decision(ChatIntent.FINANCE_SUMMARY)
 
@@ -57,6 +90,10 @@ def classify_message(message: str) -> IntentDecision:
         if contract_id is not None:
             arguments["contractId"] = contract_id
         return _decision(ChatIntent.SCHEDULE, arguments)
+
+    if "잔금" in normalized:
+        arguments = {"contractId": contract_id} if contract_id is not None else {}
+        return _decision(ChatIntent.CONTRACT_PAYMENT, arguments)
 
     if _contains_any(
         normalized,

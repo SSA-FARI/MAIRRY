@@ -265,6 +265,90 @@ def test_chat_07_09_tool_failure_does_not_expose_or_invent_values() -> None:
     assert not any(character.isdigit() for character in response.answer)
 
 
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("안녕", "안녕하세요"),
+        ("고마워", "도움이 되었다니"),
+        ("무엇을 물어볼 수 있어?", "추가 지출 시뮬레이션"),
+    ],
+)
+def test_general_chat_does_not_require_tool_or_rag(message: str, expected: str) -> None:
+    class MustNotRun:
+        def __getattr__(self, _name: str):
+            raise AssertionError("general chat must not use DB tools or RAG")
+
+    service = ChatOrchestrationService(
+        SimpleNamespace(),
+        SimpleNamespace(demo_user_id=USER_ID, enable_demo_fallback=True, rag_history_limit=8),
+        tool_registry=MustNotRun(),  # type: ignore[arg-type]
+        rag_service=MustNotRun(),  # type: ignore[arg-type]
+    )
+
+    response = asyncio.run(service.process(message))
+
+    assert response.answer_type.value == "GENERAL"
+    assert expected in response.answer
+    assert response.calculation is None
+    assert response.citations == []
+
+
+def test_ambiguous_balance_wording_requests_clarification_without_tools() -> None:
+    service, registry = _service(
+        ChatIntent.NEEDS_CLARIFICATION,
+        {},
+        ToolResultView(
+            status="TOOL_ERROR",
+            tool_name="unused",
+            data=None,
+            evidence=[],
+            calculated_at=NOW,
+            error=None,
+        ),
+    )
+
+    response = asyncio.run(service.process("현재 우리 잔금 알려줘"))
+
+    assert registry.calls == []
+    assert "계약별" in response.answer
+    assert "예상 잔액" in response.answer
+
+
+def test_simulation_follow_up_uses_structured_previous_calculation() -> None:
+    service, registry = _service(
+        ChatIntent.FOLLOW_UP,
+        {},
+        ToolResultView(
+            status="TOOL_ERROR",
+            tool_name="unused",
+            data=None,
+            evidence=[],
+            calculated_at=NOW,
+            error=None,
+        ),
+    )
+    previous = {
+        "toolName": "simulateAdditionalExpense",
+        "currentExpectedBalance": 24_000_000,
+        "simulatedExpectedBalance": 21_000_000,
+        "shortageAmount": 0,
+        "calculatedAt": NOW.isoformat(),
+        "expenseName": "가전제품 구매",
+        "additionalExpense": 3_000_000,
+    }
+
+    response = asyncio.run(
+        service.process("그럼 300만원 써도 되는 거야?", previous_calculation=previous)
+    )
+
+    assert registry.calls == []
+    assert "21,000,000원" in response.answer
+    assert "예산 부족 상태는 아니" in response.answer
+    assert response.calculation is not None
+    assert response.calculation.simulated_expected_balance == 21_000_000
+    assert "가전제품 구매" in (service.rewritten_question or "")
+
+
 def test_live_provider_intent_and_answer_are_connected_without_replacing_evidence() -> None:
     result = ToolResultView(
         status="SUCCESS",

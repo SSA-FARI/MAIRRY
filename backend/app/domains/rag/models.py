@@ -1,6 +1,8 @@
 import uuid
 from datetime import datetime
+from enum import StrEnum
 
+from pgvector.sqlalchemy import VECTOR
 from sqlalchemy import (
     Boolean,
     DateTime,
@@ -16,6 +18,13 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
+
+
+class RagIndexJobStatus(StrEnum):
+    PENDING = "PENDING"
+    INDEXING = "INDEXING"
+    INDEXED = "INDEXED"
+    FAILED = "FAILED"
 
 
 class DocumentChunk(Base):
@@ -51,6 +60,7 @@ class DocumentChunk(Base):
     document_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     embedding: Mapped[list[float]] = mapped_column(JSONB, nullable=False)
+    embedding_vector: Mapped[list[float] | None] = mapped_column(VECTOR(1536), nullable=True)
     embedding_model: Mapped[str] = mapped_column(String(100), nullable=False)
     embedding_version: Mapped[str] = mapped_column(String(32), nullable=False, default="v1")
     embedding_dimensions: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -75,9 +85,13 @@ class RagIndexJob(Base):
         UUID(as_uuid=True), ForeignKey("contracts.id", ondelete="CASCADE"), nullable=False
     )
     document_version: Mapped[int] = mapped_column(Integer, nullable=False)
-    status: Mapped[str] = mapped_column(String(16), nullable=False, default="PENDING")
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=RagIndexJobStatus.PENDING.value
+    )
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     error_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

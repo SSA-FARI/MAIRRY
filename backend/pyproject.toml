@@ -18,7 +18,8 @@ dependencies = [
   "boto3>=1.35.0",
   "httpx>=0.28.0",
   "langgraph>=0.6.0",
-  "pypdf>=6.0.0"
+  "pypdf>=6.0.0",
+  "pgvector>=0.4.2"
 ]
 
 [project.optional-dependencies]

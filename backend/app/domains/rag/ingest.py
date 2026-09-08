@@ -8,7 +8,7 @@ from ai.rag.schemas import KnowledgeType
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.domains.rag.models import DocumentChunk
-from app.domains.rag.service import build_embedding_client
+from app.domains.rag.service import build_embedding_client, close_embedding_http_clients
 
 KNOWLEDGE_ROOT = Path(__file__).resolve().parents[3] / "ai" / "knowledge"
 SOURCE_FILES = {
@@ -47,6 +47,7 @@ def ingest(source: str) -> tuple[int, int]:
             if chunk.chunk_id in existing_ids:
                 unchanged += 1
                 continue
+            vector = embedder.embed(chunk.content)
             session.add(
                 DocumentChunk(
                     chunk_id=chunk.chunk_id,
@@ -58,7 +59,8 @@ def ingest(source: str) -> tuple[int, int]:
                     chunk_index=chunk.chunk_index,
                     document_version=1,
                     content=chunk.content,
-                    embedding=embedder.embed(chunk.content),
+                    embedding=vector,
+                    embedding_vector=vector,
                     embedding_model=embedder.model_name,
                     embedding_version=embedder.version,
                     embedding_dimensions=embedder.dimensions,
@@ -72,6 +74,7 @@ def ingest(source: str) -> tuple[int, int]:
         session.commit()
     finally:
         session.close()
+        close_embedding_http_clients()
     return created, unchanged
 
 

@@ -17,6 +17,27 @@ afterEach(() => {
 });
 
 describe("ChatPage", () => {
+  it("renders general chat without a misleading missing-evidence notice", async () => {
+    server.use(
+      http.post(chatUrl, () =>
+        HttpResponse.json({
+          answer: "안녕하세요! 계약 내용, 지급 일정, 남은 예산에 관해 무엇이든 물어보세요.",
+          answerType: "GENERAL",
+          citations: [],
+          calculation: null,
+        }),
+      ),
+    );
+
+    const user = userEvent.setup();
+    render(<ChatPage />);
+    await user.type(screen.getByLabelText("AI 플래너에게 질문하기"), "안녕");
+    await user.click(screen.getByRole("button", { name: "질문 보내기" }));
+
+    expect(await screen.findByText(/안녕하세요!/)).toBeVisible();
+    expect(screen.queryByText("확인 가능한 계약 또는 계산 근거가 없습니다.")).toBeNull();
+  });
+
   it("sends a suggested question and links the returned evidence to its contract", async () => {
     let requestBody: unknown;
     server.use(
@@ -207,9 +228,13 @@ describe("ChatPage", () => {
 
     const user = userEvent.setup();
     render(<ChatPage />);
-    await user.click(screen.getByRole("button", { name: "새 대화" }));
+    const input = screen.getByLabelText("AI 플래너에게 질문하기");
+    await user.type(input, "지워질 초안");
+    await user.click(screen.getByRole("button", { name: "새 질문" }));
     expect(window.localStorage.getItem("mairry.chat.conversationId")).toBeNull();
-    await user.type(screen.getByLabelText("AI 플래너에게 질문하기"), "새 질문");
+    expect(input).toHaveValue("");
+    expect(input).toHaveFocus();
+    await user.type(input, "새 질문");
     await user.click(screen.getByRole("button", { name: "질문 보내기" }));
     await screen.findByText("확인했습니다.");
 

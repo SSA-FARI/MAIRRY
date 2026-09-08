@@ -19,6 +19,7 @@ class StubChatOrchestrationService:
         self.tool_name = None
         self.contract_resolution_source = None
         self.retrieved_chunk_count = 0
+        self.calculation_context = None
 
     async def process(self, message: str, **_kwargs: object) -> ChatResponse:
         assert message == "웨딩홀 잔금일이 언제야?"
@@ -47,6 +48,7 @@ class StubChatConversationService:
             referenced_contract_id=None,
             referenced_document_id=None,
             referenced_vendor_name=None,
+            previous_calculation=None,
         )
 
     def complete_turn(self, *_args: object, **_kwargs: object) -> UUID:
@@ -103,6 +105,27 @@ def test_chat_rejects_blank_extra_and_too_long_messages() -> None:
         response = client.post("/api/chat", json=payload)
         assert response.status_code == 400
         assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_general_greeting_does_not_require_a_wedding_plan(monkeypatch) -> None:
+    class MustNotStartConversation:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            raise AssertionError("general greeting must not query a wedding plan")
+
+    monkeypatch.setattr(
+        "app.domains.chat.router.ChatConversationService",
+        MustNotStartConversation,
+    )
+
+    response = TestClient(app).post("/api/chat", json={"message": "안녕"})
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "answer": "안녕하세요! 계약 내용, 지급 일정, 남은 예산에 관해 무엇이든 물어보세요.",
+        "answerType": "GENERAL",
+        "citations": [],
+        "calculation": None,
+    }
 
 
 def test_chat_calculation_omits_unrelated_nullable_fields(monkeypatch) -> None:

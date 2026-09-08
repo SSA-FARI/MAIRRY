@@ -48,11 +48,15 @@ class IntentDecision(AiContractModel):
             "amount": self.amount,
         }
         allowed = {
+            ChatIntent.GENERAL_CHAT: set(),
             ChatIntent.CONTRACT: {"contractId"},
+            ChatIntent.CONTRACT_DEPOSIT: {"contractId"},
             ChatIntent.CONTRACT_PAYMENT: {"contractId"},
             ChatIntent.SCHEDULE: {"contractId", "from", "to", "limit"},
             ChatIntent.FINANCE_SUMMARY: set(),
             ChatIntent.EXPENSE_SIMULATION: {"name", "amount"},
+            ChatIntent.FOLLOW_UP: set(),
+            ChatIntent.NEEDS_CLARIFICATION: set(),
             ChatIntent.UNKNOWN: set(),
         }[self.intent]
         unexpected = {

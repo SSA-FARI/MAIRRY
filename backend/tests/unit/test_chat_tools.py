@@ -133,6 +133,34 @@ def test_chat_04_upcoming_tool_filters_unpaid_dates_and_applies_limit() -> None:
     ]
 
 
+def test_contract_payment_tool_returns_only_current_plan_unpaid_items() -> None:
+    registry = _registry()
+    registry._contracts.list_confirmed = lambda _plan_id: [
+        _contract(
+            _payment(5, due_date=None, name="중도금", amount=5_000_000),
+            _payment(6, due_date=date(2027, 4, 30), name="잔금", amount=20_000_000),
+            _payment(
+                7,
+                due_date=date(2026, 8, 1),
+                status=PaymentStatus.PAID,
+                name="계약금",
+                amount=3_000_000,
+            ),
+        )
+    ]
+
+    result = registry.execute(
+        "getContractPayments",
+        {"contractId": str(CONTRACT_ID)},
+        USER_ID,
+    )
+
+    assert result.status == "SUCCESS"
+    assert result.data is not None
+    assert [item["amount"] for item in result.data["payments"]] == [5_000_000, 20_000_000]
+    assert result.data["payments"][0]["dueDate"] is None
+
+
 def test_chat_05_finance_tool_reuses_server_calculation() -> None:
     registry = _registry()
     registry._finance.get_summary = lambda **_kwargs: FinanceSummary(
