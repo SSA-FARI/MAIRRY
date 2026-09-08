@@ -26,6 +26,7 @@ from app.core.enums import (
 )
 from app.domains.contracts.models import Contract, Payment
 from app.domains.documents.models import Document
+from app.domains.finance.router import get_finance_today
 from app.domains.users.models import User
 from app.domains.wedding_plan.models import Asset, WeddingPlan, WeddingPlanMember
 from app.main import app
@@ -34,6 +35,7 @@ pytestmark = pytest.mark.integration
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 BASE_DATE = date(2026, 9, 3)
+TODAY = date(2026, 9, 6)
 
 
 def _test_database_url() -> str:
@@ -300,6 +302,7 @@ def finance_scope(
 
     app.dependency_overrides[get_db] = database_session
     app.dependency_overrides[get_settings] = lambda: configuration
+    app.dependency_overrides[get_finance_today] = lambda: TODAY
     try:
         yield TestClient(app), fixture
     finally:
@@ -431,3 +434,38 @@ def test_fin_04_simulation_is_not_persisted(
             session.scalar(select(func.count()).select_from(Payment)),
         )
     assert after_counts == before_counts
+
+
+@pytest.mark.parametrize(
+    ("today", "expected_due_date"),
+    [
+        (date(2026, 9, 6), "2026-09-07"),
+        (date(2026, 9, 7), "2026-09-07"),
+        (date(2026, 9, 8), "2026-09-23"),
+        (date(2026, 9, 23), "2026-09-23"),
+        (date(2026, 9, 24), None),
+    ],
+)
+def test_nearest_payment_uses_injected_today(
+    finance_scope: tuple[TestClient, FinanceFixture],
+    today: date,
+    expected_due_date: str | None,
+) -> None:
+    client, _fixture = finance_scope
+    app.dependency_overrides[get_finance_today] = lambda: today
+
+    response = client.get("/api/finance/summary")
+
+    assert response.status_code == 200
+    summary = response.json()
+    nearest_payment = summary["nearestPayment"]
+    if expected_due_date is None:
+        assert nearest_payment is None
+    else:
+        assert nearest_payment["dueDate"] == expected_due_date
+    assert summary["remainingExpense"] == 28_000_000
+    assert [payment["dueDate"] for payment in summary["timeline"]] == [
+        "2026-09-01",
+        "2026-09-07",
+        "2026-09-23",
+    ]
