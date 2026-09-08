@@ -25,6 +25,7 @@ from app.domains.documents.service import (
     get_document_query_service,
     get_document_upload_service,
 )
+from app.domains.rag.service import process_contract_index
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -90,7 +91,10 @@ def get_document_preview_url(
 def confirm_document(
     document_id: UUID,
     payload: ContractConfirm,
+    background_tasks: BackgroundTasks,
     db: Annotated[Session, Depends(get_db)],
     configuration: Annotated[Settings, Depends(get_settings)],
 ) -> ContractDetailRead:
-    return ContractConfirmationService(db, configuration).confirm(document_id, payload)
+    contract = ContractConfirmationService(db, configuration).confirm(document_id, payload)
+    background_tasks.add_task(process_contract_index, contract.id, configuration)
+    return contract

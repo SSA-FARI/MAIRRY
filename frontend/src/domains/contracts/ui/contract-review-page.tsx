@@ -681,6 +681,8 @@ function DocumentPreviewPane({
         />
       )}
       {kind === "image" && (
+        // Presigned 원문 URL은 런타임마다 호스트와 쿼리가 달라 Next Image 최적화 대상이 아니다.
+        // eslint-disable-next-line @next/next/no-img-element
         <img
           src={previewUrl.url}
           alt="계약서 원문 미리보기"

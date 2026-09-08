@@ -25,6 +25,7 @@ const INITIAL_MESSAGE: ChatMessage = {
   role: "assistant",
   text: "확정된 계약과 현재 자금 현황을 근거로 답해드릴게요. 무엇이 궁금한가요?",
 };
+const CONVERSATION_STORAGE_KEY = "mairry.chat.conversationId";
 
 function errorMessage(error: unknown): string {
   if (error instanceof ApiError && error.message) return error.message;
@@ -49,11 +50,16 @@ export function ChatPage() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [failedQuestion, setFailedQuestion] = useState<string | null>(null);
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const nextId = useRef(1);
   const controller = useRef<AbortController | null>(null);
   const conversationEnd = useRef<HTMLDivElement | null>(null);
+  const composerInput = useRef<HTMLTextAreaElement | null>(null);
 
-  useEffect(() => () => controller.current?.abort(), []);
+  useEffect(() => {
+    setConversationId(window.localStorage.getItem(CONVERSATION_STORAGE_KEY));
+    return () => controller.current?.abort();
+  }, []);
   useEffect(() => {
     if (typeof conversationEnd.current?.scrollIntoView === "function") {
       conversationEnd.current.scrollIntoView({ block: "nearest" });
@@ -75,7 +81,11 @@ export function ChatPage() {
     controller.current = requestController;
 
     try {
-      const response = await sendChatMessage(normalized, requestController.signal);
+      const response = await sendChatMessage(normalized, conversationId, requestController.signal);
+      if (response.conversationId) {
+        setConversationId(response.conversationId);
+        window.localStorage.setItem(CONVERSATION_STORAGE_KEY, response.conversationId);
+      }
       setMessages((current) => [
         ...current,
         { id: nextId.current++, role: "assistant", text: response.answer, response },
@@ -95,21 +105,43 @@ export function ChatPage() {
     void ask(input);
   }
 
+  function startNewConversation() {
+    controller.current?.abort();
+    window.localStorage.removeItem(CONVERSATION_STORAGE_KEY);
+    setConversationId(null);
+    setMessages([INITIAL_MESSAGE]);
+    setInput("");
+    setError(null);
+    setFailedQuestion(null);
+    composerInput.current?.focus();
+  }
+
   return (
     <div className="chat-shell">
       <AppHeader active="chat" />
 
       <main className="chat-main">
         <section className="chat-intro" aria-labelledby="chat-title">
-          <div>
+          <div className="chat-intro-copy">
             <span className="chat-eyebrow">GROUNDED WEDDING ASSISTANT</span>
             <h1 id="chat-title">계약과 자금, 바로 물어보세요</h1>
+            <p>
+              확정된 계약 원문과 서버 계산 결과만 사용합니다.
+              <br />
+              답변의 근거도 함께 확인할 수 있어요.
+            </p>
           </div>
-          <p>
-            확정된 계약 원문과 서버 계산 결과만 사용합니다.
-            <br />
-            답변의 근거도 함께 확인할 수 있어요.
-          </p>
+          <button
+            className="chat-new-question-button"
+            type="button"
+            disabled={sending}
+            onClick={startNewConversation}
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            새 질문
+          </button>
         </section>
 
         <div className="chat-layout">
@@ -163,6 +195,7 @@ export function ChatPage() {
               </label>
               <textarea
                 id="chat-message"
+                ref={composerInput}
                 value={input}
                 maxLength={2000}
                 rows={2}
@@ -217,6 +250,7 @@ export function ChatPage() {
 }
 
 function ResponseEvidence({ response }: { response: ChatResponse }) {
+  if (response.answerType === "GENERAL") return null;
   return (
     <div className="chat-evidence">
       {response.answerType === "NOT_FOUND" && (
@@ -226,17 +260,38 @@ function ResponseEvidence({ response }: { response: ChatResponse }) {
         <section aria-label="계약 근거">
           <h3>계약 근거</h3>
           <div className="chat-citations">
-            {response.citations.map((citation, index) => (
-              <Link
-                className="chat-citation"
-                href={`/contracts/${citation.contractId}`}
-                key={`${citation.contractId}-${index}`}
-              >
-                <strong>{citation.label}</strong>
-                <blockquote>{citation.sourceText}</blockquote>
-                <span>계약 상세 보기 →</span>
-              </Link>
-            ))}
+            {response.citations.map((citation, index) => {
+              const content = (
+                <>
+                  <strong>{citation.label}</strong>
+                  {(citation.sourceType || citation.page) && (
+                    <small>
+                      {[citation.sourceType, citation.page ? `${citation.page}페이지` : null]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </small>
+                  )}
+                  <blockquote>{citation.sourceText}</blockquote>
+                  {citation.contractId && <span>계약 상세 보기 →</span>}
+                </>
+              );
+              return citation.contractId ? (
+                <Link
+                  className="chat-citation"
+                  href={`/contracts/${citation.contractId}`}
+                  key={`${citation.contractId}-${index}`}
+                >
+                  {content}
+                </Link>
+              ) : (
+                <article
+                  className="chat-citation"
+                  key={`${citation.sourceType ?? "source"}-${index}`}
+                >
+                  {content}
+                </article>
+              );
+            })}
           </div>
         </section>
       )}

@@ -16,3 +16,10 @@ def test_expense_intent_preserves_arguments() -> None:
     assert call is not None
     assert call.tool_name == "simulateAdditionalExpense"
     assert call.arguments["amount"] == 3_000_000
+
+
+def test_user_contract_lookup_selects_structured_tool() -> None:
+    call = decide_tool(ChatIntent.USER_CONTRACT_LOOKUP)
+
+    assert call is not None
+    assert call.tool_name == "getUserContracts"

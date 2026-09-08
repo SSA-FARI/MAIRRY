@@ -24,6 +24,7 @@ from app.domains.contracts.schemas import (
 )
 from app.domains.documents.models import Document
 from app.domains.documents.repository import DocumentRepository
+from app.domains.rag.repository import RagRepository
 from app.domains.wedding_plan.repository import WeddingPlanRepository
 
 TodayProvider = Callable[[], date]
@@ -100,6 +101,7 @@ class ContractConfirmationService:
         self._contracts = ContractRepository(session)
         self._documents = DocumentRepository()
         self._plans = WeddingPlanRepository(session)
+        self._rag = RagRepository(session)
 
     def confirm(self, document_id: UUID, payload: ContractConfirm) -> ContractDetailRead:
         try:
@@ -148,6 +150,7 @@ class ContractConfirmationService:
             document.analysis_status = DocumentStatus.CONFIRMED
             self._contracts.add(contract)
             self._session.flush()
+            self._rag.enqueue(contract.id, 1)
             response = build_contract_detail(contract)
             self._session.commit()
             return response
@@ -177,6 +180,7 @@ class ContractManagementService:
         self._contracts = ContractRepository(session)
         self._documents = DocumentRepository()
         self._plans = WeddingPlanRepository(session)
+        self._rag = RagRepository(session)
 
     def update(self, contract_id: UUID, payload: ContractConfirm) -> ContractDetailRead:
         try:
@@ -192,6 +196,7 @@ class ContractManagementService:
                 preserve_evidence=True,
             )
             self._session.flush()
+            self._rag.enqueue(contract.id, self._rag.next_version(contract.id))
             response = build_contract_detail(contract)
             self._session.commit()
             return response
@@ -211,6 +216,7 @@ class ContractManagementService:
                 if document.extraction_raw is not None
                 else DocumentStatus.FAILED
             )
+            self._rag.delete_contract_chunks(contract.id)
             self._contracts.delete(contract)
             self._session.flush()
             self._session.commit()

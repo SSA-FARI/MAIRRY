@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from ai.common.types import ToolResultView, ToolStatus
 from app.core.config import Settings
+from app.core.enums import DocumentType
 from app.core.error_codes import ErrorCode
 from app.core.errors import AppError
 from app.domains.contracts.models import Contract, Payment
@@ -19,6 +20,11 @@ from app.domains.wedding_plan.repository import WeddingPlanRepository
 
 NowProvider = Callable[[], datetime]
 TodayProvider = Callable[[], date]
+PAYMENT_TERM_ALIASES = {
+    "DEPOSIT": frozenset({"예약금", "계약금", "선금", "첫납부금", "초기납부금", "1차납부금"})
+}
+
+SDM_TERMS = ("스드메", "스튜디오", "드레스", "메이크업", "웨딩촬영", "촬영", "패키지")
 
 
 class ChatToolRegistry:
@@ -44,7 +50,10 @@ class ChatToolRegistry:
         user_id: UUID,
     ) -> ToolResultView:
         tools = {
+            "getUserContracts": self._get_user_contracts,
             "getContractDetails": self._get_contract_details,
+            "getContractDeposit": self._get_contract_deposit,
+            "getContractPayments": self._get_contract_payments,
             "getUpcomingPayments": self._get_upcoming_payments,
             "getFinanceSummary": self._get_finance_summary,
             "simulateAdditionalExpense": self._simulate_additional_expense,
@@ -95,6 +104,75 @@ class ChatToolRegistry:
         if not matching and len(contracts) == 1:
             return contracts[0].id
         return None
+
+    def _get_user_contracts(
+        self,
+        arguments: dict[str, Any],
+        user_id: UUID,
+    ) -> ToolResultView:
+        query = arguments.get("query", "")
+        if not set(arguments).issubset({"query", "contractId"}) or not isinstance(query, str):
+            raise ValueError("getUserContracts received an invalid internal query")
+        plan = self._plans.get_current_for_user(user_id)
+        if plan is None:
+            return self._success(
+                "getUserContracts",
+                {"category": _contract_lookup_label(query), "contracts": []},
+                [],
+            )
+        contract_id = self._optional_uuid(arguments.get("contractId"))
+        if contract_id is not None:
+            matched = self._contracts.get_confirmed(plan.id, contract_id)
+            contracts = [matched] if matched is not None else []
+        else:
+            company_terms, document_types = _contract_lookup_filters(query)
+            contracts = self._contracts.list_confirmed_matching(
+                plan.id,
+                company_terms=company_terms,
+                document_types=document_types,
+            )
+        data = {
+            "category": _contract_lookup_label(query),
+            "contracts": [
+                {
+                    "contractId": str(contract.id),
+                    "documentId": str(contract.document_id),
+                    "documentType": contract.document_type.value,
+                    "company": contract.company,
+                    "totalPrice": contract.total_price,
+                    "status": contract.status.value,
+                    "financeReflected": any(
+                        payment.status.value == "UNPAID" for payment in contract.payments
+                    ),
+                }
+                for contract in contracts
+            ],
+        }
+        return self._success("getUserContracts", data, [])
+
+    def resolve_explicit_contract_id(self, message: str, user_id: UUID) -> UUID | None:
+        context = self.resolve_explicit_contract_context(message, user_id)
+        return UUID(context["contractId"]) if context is not None else None
+
+    def resolve_explicit_contract_context(
+        self, message: str, user_id: UUID
+    ) -> dict[str, str] | None:
+        plan = self._plans.get_current_for_user(user_id)
+        if plan is None:
+            return None
+        matching = [
+            contract
+            for contract in self._contracts.list_confirmed(plan.id)
+            if contract.company in message
+        ]
+        if len(matching) != 1:
+            return None
+        contract = matching[0]
+        return {
+            "contractId": str(contract.id),
+            "documentId": str(contract.document_id),
+            "company": contract.company,
+        }
 
     def _get_contract_details(
         self,
@@ -175,6 +253,100 @@ class ChatToolRegistry:
         ]
         return self._success("getUpcomingPayments", {"payments": payments}, evidence)
 
+    def _get_contract_deposit(self, arguments: dict[str, Any], user_id: UUID) -> ToolResultView:
+        contract_id = UUID(str(arguments["contractId"]))
+        plan = self._plans.get_current_for_user(user_id)
+        contract = self._contracts.get_confirmed(plan.id, contract_id) if plan is not None else None
+        if contract is None:
+            return self._failure("NOT_FOUND", "getContractDeposit", "확정 계약을 찾을 수 없습니다.")
+        aliases = PAYMENT_TERM_ALIASES["DEPOSIT"]
+        matching = [
+            payment
+            for payment in contract.payments
+            if any(alias in "".join(payment.name.split()) for alias in aliases)
+        ]
+        if len(matching) != 1:
+            return self._failure(
+                "INSUFFICIENT_DATA",
+                "getContractDeposit",
+                "계약금으로 식별되는 지급항목을 하나로 확정할 수 없습니다.",
+            )
+        payment = matching[0]
+        return self._success(
+            "getContractDeposit",
+            {
+                "contractId": str(contract.id),
+                "company": contract.company,
+                "payment": {
+                    "id": str(payment.id),
+                    "name": payment.name,
+                    "amount": payment.amount,
+                    "status": payment.status.value,
+                    "dueDate": payment.due_date.isoformat() if payment.due_date else None,
+                },
+            },
+            [self._payment_evidence(contract, payment)] if payment.source_text else [],
+        )
+
+    def _get_contract_payments(
+        self,
+        arguments: dict[str, Any],
+        user_id: UUID,
+    ) -> ToolResultView:
+        contract_id = self._optional_uuid(arguments.get("contractId"))
+        plan = self._plans.get_current_for_user(user_id)
+        if plan is None:
+            return self._failure(
+                "NOT_FOUND",
+                "getContractPayments",
+                "현재 웨딩 계획을 찾을 수 없습니다.",
+            )
+        contracts = self._contracts.list_confirmed(plan.id)
+        if not contracts:
+            return self._failure(
+                "NOT_FOUND",
+                "getContractPayments",
+                "아직 확정된 계약이 없습니다.",
+            )
+        if contract_id is not None:
+            contracts = [contract for contract in contracts if contract.id == contract_id]
+            if not contracts:
+                return self._failure(
+                    "NOT_FOUND",
+                    "getContractPayments",
+                    "요청한 확정 계약을 찾을 수 없습니다.",
+                )
+
+        candidates = [
+            (contract, payment)
+            for contract in contracts
+            for payment in contract.payments
+            if payment.status.value == "UNPAID"
+        ]
+        if not candidates:
+            return self._failure(
+                "NOT_FOUND",
+                "getContractPayments",
+                "아직 등록된 미지급 잔금이 없습니다.",
+            )
+        payments = [
+            {
+                "contractId": str(contract.id),
+                "company": contract.company,
+                "name": payment.name,
+                "amount": payment.amount,
+                "dueDate": payment.due_date.isoformat() if payment.due_date else None,
+                "status": payment.status.value,
+            }
+            for contract, payment in candidates
+        ]
+        evidence = [
+            self._payment_evidence(contract, payment)
+            for contract, payment in candidates
+            if payment.source_text
+        ]
+        return self._success("getContractPayments", {"payments": payments}, evidence)
+
     def _get_finance_summary(
         self,
         arguments: dict[str, Any],
@@ -198,7 +370,11 @@ class ChatToolRegistry:
         if isinstance(amount, bool) or not isinstance(amount, int) or amount <= 0:
             raise ValueError("amount must be a positive integer")
         simulation = self._finance.simulate(amount, user_id=user_id)
-        data = {"name": name.strip(), **simulation.model_dump(mode="json", by_alias=True)}
+        data = {
+            "name": name.strip(),
+            "additionalExpense": amount,
+            **simulation.model_dump(mode="json", by_alias=True),
+        }
         return self._success("simulateAdditionalExpense", data, [])
 
     def _success(
@@ -279,3 +455,25 @@ class ChatToolRegistry:
             if term.source_text
         ]
         return [*payment_evidence, *term_evidence]
+
+
+def _contract_lookup_filters(query: str) -> tuple[tuple[str, ...], tuple[DocumentType, ...]]:
+    compact = "".join(query.replace("·", " ").replace("ㆍ", " ").split())
+    if "스드메" in compact or "스튜디오드레스메이크업" in compact or "촬영패키지" in compact:
+        return SDM_TERMS, ()
+    individual_terms = tuple(term for term in ("스튜디오", "드레스", "메이크업") if term in query)
+    if individual_terms:
+        return individual_terms, ()
+    if "웨딩홀" in query:
+        return ("웨딩홀",), (DocumentType.WEDDING_HALL,)
+    return (), ()
+
+
+def _contract_lookup_label(query: str) -> str:
+    compact = "".join(query.replace("·", " ").replace("ㆍ", " ").split())
+    if "스드메" in compact or "스튜디오드레스메이크업" in compact or "촬영패키지" in compact:
+        return "스드메"
+    for term in ("스튜디오", "드레스", "메이크업", "웨딩홀"):
+        if term in query:
+            return term
+    return "전체"

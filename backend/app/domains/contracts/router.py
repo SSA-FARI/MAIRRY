@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
@@ -14,6 +14,7 @@ from app.domains.contracts.schemas import (
     PaymentStatusUpdate,
 )
 from app.domains.contracts.service import ContractManagementService, ContractQueryService
+from app.domains.rag.service import process_contract_index
 
 router = APIRouter(prefix="/contracts", tags=["contracts"])
 
@@ -52,10 +53,13 @@ def get_contract(
 def update_contract(
     contract_id: UUID,
     payload: ContractConfirm,
+    background_tasks: BackgroundTasks,
     db: Annotated[Session, Depends(get_db)],
     configuration: Annotated[Settings, Depends(get_settings)],
 ) -> ContractDetailRead:
-    return ContractManagementService(db, configuration).update(contract_id, payload)
+    contract = ContractManagementService(db, configuration).update(contract_id, payload)
+    background_tasks.add_task(process_contract_index, contract.id, configuration)
+    return contract
 
 
 @router.delete(

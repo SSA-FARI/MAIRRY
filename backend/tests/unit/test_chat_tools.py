@@ -2,6 +2,7 @@ from datetime import UTC, date, datetime
 from types import SimpleNamespace
 from uuid import UUID
 
+import pytest
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.enums import ContractStatus, DocumentType, PaymentStatus
@@ -21,11 +22,13 @@ def _payment(
     due_date: date | None,
     status: PaymentStatus = PaymentStatus.UNPAID,
     source_text: str | None = "잔금 근거",
+    name: str = "잔금",
+    amount: int = 20_000_000,
 ) -> Payment:
     return Payment(
         id=UUID(int=payment_id),
-        name="잔금",
-        amount=20_000_000,
+        name=name,
+        amount=amount,
         due_date=due_date,
         status=status,
         source_text=source_text,
@@ -130,6 +133,34 @@ def test_chat_04_upcoming_tool_filters_unpaid_dates_and_applies_limit() -> None:
     ]
 
 
+def test_contract_payment_tool_returns_only_current_plan_unpaid_items() -> None:
+    registry = _registry()
+    registry._contracts.list_confirmed = lambda _plan_id: [
+        _contract(
+            _payment(5, due_date=None, name="중도금", amount=5_000_000),
+            _payment(6, due_date=date(2027, 4, 30), name="잔금", amount=20_000_000),
+            _payment(
+                7,
+                due_date=date(2026, 8, 1),
+                status=PaymentStatus.PAID,
+                name="계약금",
+                amount=3_000_000,
+            ),
+        )
+    ]
+
+    result = registry.execute(
+        "getContractPayments",
+        {"contractId": str(CONTRACT_ID)},
+        USER_ID,
+    )
+
+    assert result.status == "SUCCESS"
+    assert result.data is not None
+    assert [item["amount"] for item in result.data["payments"]] == [5_000_000, 20_000_000]
+    assert result.data["payments"][0]["dueDate"] is None
+
+
 def test_chat_05_finance_tool_reuses_server_calculation() -> None:
     registry = _registry()
     registry._finance.get_summary = lambda **_kwargs: FinanceSummary(
@@ -168,6 +199,7 @@ def test_chat_06_10_simulation_is_forwarded_and_deterministic() -> None:
     assert first == second
     assert calls == [(3_000_000, USER_ID), (3_000_000, USER_ID)]
     assert first.data is not None
+    assert first.data["additionalExpense"] == 3_000_000
     assert first.data["simulatedExpectedBalance"] == 7_000_000
 
 
@@ -194,3 +226,122 @@ def test_chat_03_08_09_failures_never_include_data_or_evidence() -> None:
     for result in (not_found, invalid, tool_error):
         assert result.data is None
         assert result.evidence == []
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["예약금", "계약금", "선금", "첫 납부금", "초기 납부금", "1차 납부금"],
+)
+def test_contract_deposit_uses_explicit_payment_aliases_and_status(name: str) -> None:
+    registry = _registry()
+    contract = _contract(
+        _payment(
+            5,
+            due_date=date(2026, 8, 1),
+            status=PaymentStatus.PAID,
+            source_text="계약금 3,000,000원 지급 완료",
+            name=name,
+            amount=3_000_000,
+        )
+    )
+    registry._contracts.get_confirmed = lambda _plan_id, _contract_id: contract
+
+    result = registry.execute("getContractDeposit", {"contractId": str(CONTRACT_ID)}, USER_ID)
+
+    assert result.status == "SUCCESS"
+    assert result.data is not None
+    assert result.data["payment"]["amount"] == 3_000_000
+    assert result.data["payment"]["status"] == "PAID"
+
+
+def test_contract_deposit_never_guesses_earliest_payment() -> None:
+    registry = _registry()
+    contract = _contract(
+        _payment(5, due_date=date(2026, 1, 1), name="중도금"),
+        _payment(6, due_date=date(2026, 2, 1), name="잔금"),
+    )
+    registry._contracts.get_confirmed = lambda _plan_id, _contract_id: contract
+
+    result = registry.execute("getContractDeposit", {"contractId": str(CONTRACT_ID)}, USER_ID)
+
+    assert result.status == "INSUFFICIENT_DATA"
+    assert result.data is None
+
+
+def test_contract_deposit_cannot_read_contract_outside_current_plan() -> None:
+    registry = _registry()
+    registry._contracts.get_confirmed = lambda _plan_id, _contract_id: None
+
+    result = registry.execute("getContractDeposit", {"contractId": str(UUID(int=99))}, USER_ID)
+
+    assert result.status == "NOT_FOUND"
+    assert result.data is None
+
+
+def test_user_sdm_lookup_uses_current_plan_and_structured_filters() -> None:
+    registry = _registry()
+    studio_contract = _contract(_payment(31, due_date=date(2027, 5, 1)))
+    studio_contract.document_type = DocumentType.UNKNOWN
+    studio_contract.company = "오뜨꾸뛰르 스튜디오"
+    calls: list[tuple[UUID, tuple[str, ...], tuple[object, ...]]] = []
+
+    def list_matching(plan_id, *, company_terms, document_types):
+        calls.append((plan_id, company_terms, document_types))
+        return [studio_contract]
+
+    registry._contracts.list_confirmed_matching = list_matching
+
+    result = registry.execute(
+        "getUserContracts",
+        {"query": "현재 내 스드메 계약 있나?"},
+        USER_ID,
+    )
+
+    assert calls[0][0] == PLAN_ID
+    assert {"스튜디오", "드레스", "메이크업"}.issubset(calls[0][1])
+    assert result.status == "SUCCESS"
+    assert result.data is not None
+    assert result.data["contracts"][0]["company"] == "오뜨꾸뛰르 스튜디오"
+    assert result.data["contracts"][0]["status"] == "CONFIRMED"
+    assert result.data["contracts"][0]["financeReflected"] is True
+    assert result.evidence == []
+
+
+def test_user_sdm_lookup_returns_successful_empty_result_without_rag_evidence() -> None:
+    registry = _registry()
+    registry._contracts.list_confirmed_matching = lambda *_args, **_kwargs: []
+
+    result = registry.execute(
+        "getUserContracts",
+        {"query": "내 스 드 메 계약이 있어?"},
+        USER_ID,
+    )
+
+    assert result.status == "SUCCESS"
+    assert result.data == {"category": "스드메", "contracts": []}
+    assert result.evidence == []
+
+
+def test_user_contract_lookup_returns_multiple_confirmed_contracts() -> None:
+    registry = _registry()
+    hall = _contract()
+    studio = _contract()
+    studio.id = UUID(int=44)
+    studio.document_id = UUID(int=45)
+    studio.company = "오뜨꾸뛰르 스튜디오"
+    studio.document_type = DocumentType.UNKNOWN
+    registry._contracts.list_confirmed_matching = lambda *_args, **_kwargs: [hall, studio]
+
+    result = registry.execute(
+        "getUserContracts",
+        {"query": "현재 등록된 내 계약 목록 알려줘"},
+        USER_ID,
+    )
+
+    assert result.status == "SUCCESS"
+    assert result.data is not None
+    assert [contract["company"] for contract in result.data["contracts"]] == [
+        "A웨딩홀",
+        "오뜨꾸뛰르 스튜디오",
+    ]
+    assert result.evidence == []

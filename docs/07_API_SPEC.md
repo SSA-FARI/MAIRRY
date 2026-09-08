@@ -434,23 +434,36 @@ amount는 0보다 큰 정수다. `simulatedExpectedBalance = currentExpectedBala
 
 ### POST /api/chat
 
-요청: `{"message": "웨딩홀 잔금일이 언제야?"}`
+첫 요청: `{"message": "라온벨 웨딩컨벤션 해지 수수료 알려줘"}`
 
-message는 공백이 아닌 1~2,000자 문자열이다. AI는 Backend ToolResult의 숫자, 날짜, 상태를
-변경하거나 재계산하지 않는다.
+후속 요청: `{"conversationId": "5ea3ca71-6178-47a3-8cd7-faa48e88df89", "message": "위 계약 예약금 얼마야?"}`
+
+message는 공백이 아닌 1~2,000자 문자열이다. 응답의 `conversationId`를 다음 요청에 보내면 서버가
+DB에 저장한 최근 user/assistant 메시지와 마지막 계약 문맥을 복원한다. ID를 생략하면 새 대화를
+생성한다. 다른 사용자 또는 현재 WeddingPlan이 아닌 대화 ID는 404로 처리한다. 기존 `history`는
+호환성용 deprecated 필드이며 서버 저장 이력이 기준이다. AI는 Backend ToolResult의 숫자, 날짜,
+상태를 변경하거나 재계산하지 않는다.
 
 계약 근거 응답:
 
 ```json
 {
+  "conversationId": "5ea3ca71-6178-47a3-8cd7-faa48e88df89",
+  "messageId": "9ee37921-e458-49ce-8267-c64dcd770542",
   "answer": "A웨딩홀 잔금일은 2027년 4월 30일입니다.",
   "answerType": "CONTRACT",
   "citations": [{
     "contractId": "90af8db0-a099-40a0-bb92-720ec331a6a0",
+    "documentId": null,
+    "sourceType": "CONTRACT_CLAUSE",
+    "title": null,
+    "clauseTitle": null,
+    "page": null,
     "label": "A웨딩홀 · 잔금",
     "sourceText": "잔금 20,000,000원은 2027년 4월 30일까지"
   }],
-  "calculation": null
+  "calculation": null,
+  "usedRag": false
 }
 ```
 
@@ -458,6 +471,8 @@ message는 공백이 아닌 1~2,000자 문자열이다. AI는 Backend ToolResult
 
 ```json
 {
+  "conversationId": "5ea3ca71-6178-47a3-8cd7-faa48e88df89",
+  "messageId": "fa563208-9b92-411c-b3f5-d54ef64bf122",
   "answer": "가전 비용 300만 원을 추가하면 예상 잔액은 700만 원이며 부족액은 없습니다.",
   "answerType": "CALCULATION",
   "citations": [],
@@ -467,12 +482,39 @@ message는 공백이 아닌 1~2,000자 문자열이다. AI는 Backend ToolResult
     "simulatedExpectedBalance": 7000000,
     "shortageAmount": 0,
     "calculatedAt": "2026-08-25T12:00:00+09:00"
-  }
+  },
+  "usedRag": false
 }
 ```
 
-answerType은 CONTRACT, CALCULATION, NOT_FOUND다. 지원하지 않는 질문과 Tool 실패에서는 임의의
-금액/날짜를 생성하지 않는다. 요청 오류 400, AI 실패 및 대체 응답 불가 502.
+RAG 응답의 citation은 `sourceType`, 문서 `title`, `clauseTitle`, `page`, 접근 가능한
+`documentId`/`contractId`를 제공한다. 공용 FAQ·도메인 지식은 계약 링크를 만들지 않도록 두 ID가
+null이다. `usedRag`는 검색 근거를 실제 답변에 사용했을 때만 true다.
+
+answerType은 GENERAL, CONTRACT, CALCULATION, NOT_FOUND, RAG, MIXED다. GENERAL은 인사·도움말·
+명확화처럼 계약 또는 계산 근거가 필요 없는 응답이며 citation과 calculation은 비어 있다. 지원하지
+않는 질문과 Tool 실패에서는 임의의 금액/날짜를 생성하지 않는다. 요청 오류 400, AI 실패 및 대체
+응답 불가 502.
+
+직전 추가 지출 계산은 해당 대화의 assistant message context에 구조화된 값으로 저장한다. `그럼`,
+`그 금액`, `써도 돼?` 같은 후속 질문은 같은 `conversationId`에서만 이 값을 복원하며, 답변 문자열의
+금액을 다시 파싱하지 않는다.
+
+`예약금`, `계약금`, `선금`, `첫 납부금`, `초기 납부금`, `1차 납부금`은 Payment 이름의 계약금
+alias다. `getContractDeposit`은 현재 계획의 확정 계약에서 이 이름과 일치하는 단 하나의 Payment만
+반환하며, 가장 이른 Payment를 계약금으로 추측하지 않는다. 응답은 DB의 amount와 PAID/UNPAID 상태를
+그대로 사용한다.
+
+`현재 내 스드메 계약 있나?`, `현재 등록된 내 계약 목록`처럼 개인 계약 보유 여부를 묻는 질문은
+공용 도메인 RAG가 아니라 `getUserContracts`로 처리한다. 서버가 인증 사용자로 현재 활성
+WeddingPlan을 찾고 그 계획의 CONFIRMED Contract만 SQL에서 조회한다. `스드메`, `스 드 메`,
+`스튜디오·드레스·메이크업`, `웨딩 촬영 패키지`는 현재 별도 계약 카테고리 enum이 없으므로 회사명의
+스튜디오/드레스/메이크업/촬영/패키지 표현으로 필터링한다. 조회 응답은 업체명, 확정 상태, 총액,
+자금계획 반영 여부를 설명하고 citation과 `usedRag`는 비운다.
+
+검색 top-k는 답변 후보일 뿐이다. 도메인 지식은 질문에 제목이 직접 대응하는 최상위 근거 하나만,
+계약 조항은 중복 내용과 동일 조항을 제거한 관련 근거만 답변과 citation에 승격한다. 따라서 검색된
+후보 전체를 원문 목록처럼 노출하지 않는다.
 
 ## Chat 내부 Tool 계약
 

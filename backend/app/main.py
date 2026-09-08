@@ -1,7 +1,12 @@
+import asyncio
+import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, suppress
 from typing import Any
 
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
 from app.core.errors import register_exception_handlers
@@ -10,8 +15,40 @@ from app.domains.chat.router import router as chat_router
 from app.domains.contracts.router import router as contracts_router
 from app.domains.documents.router import router as documents_router
 from app.domains.finance.router import router as finance_router
+from app.domains.rag.reconciliation import run_reconciliation_loop
+from app.domains.rag.service import close_embedding_http_clients
 from app.domains.wedding_plan.router import router as wedding_plan_router
 from app.domains.wedding_plan.schemas import WeddingPlanRead, WeddingPlanUpsert
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    if settings.rag_enabled and settings.rag_seed_ingest_on_startup:
+        try:
+            from ai.rag.ingest_seed import ingest_configured_seed
+
+            await run_in_threadpool(ingest_configured_seed, settings)
+        except Exception as exc:
+            logger.exception(
+                "RAG seed startup ingestion failed: errorType=%s",
+                type(exc).__name__,
+            )
+    reconciliation_task: asyncio.Task[None] | None = None
+    if settings.rag_enabled and settings.rag_index_reconciliation_enabled:
+        reconciliation_task = asyncio.create_task(
+            run_reconciliation_loop(settings),
+            name="rag-index-reconciliation",
+        )
+    try:
+        yield
+    finally:
+        if reconciliation_task is not None:
+            reconciliation_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await reconciliation_task
+        close_embedding_http_clients()
 
 
 class MairryAPI(FastAPI):
@@ -36,7 +73,7 @@ class MairryAPI(FastAPI):
         return openapi_schema
 
 
-app = MairryAPI(title="MAIRRY API", version="0.1.0")
+app = MairryAPI(title="MAIRRY API", version="0.1.0", lifespan=lifespan)
 register_exception_handlers(app)
 app.add_middleware(
     CORSMiddleware,

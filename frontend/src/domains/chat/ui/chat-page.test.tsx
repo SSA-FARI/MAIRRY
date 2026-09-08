@@ -11,9 +11,33 @@ const server = setupServer();
 
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 afterAll(() => server.close());
-afterEach(() => server.resetHandlers());
+afterEach(() => {
+  server.resetHandlers();
+  window.localStorage.clear();
+});
 
 describe("ChatPage", () => {
+  it("renders general chat without a misleading missing-evidence notice", async () => {
+    server.use(
+      http.post(chatUrl, () =>
+        HttpResponse.json({
+          answer: "안녕하세요! 계약 내용, 지급 일정, 남은 예산에 관해 무엇이든 물어보세요.",
+          answerType: "GENERAL",
+          citations: [],
+          calculation: null,
+        }),
+      ),
+    );
+
+    const user = userEvent.setup();
+    render(<ChatPage />);
+    await user.type(screen.getByLabelText("AI 플래너에게 질문하기"), "안녕");
+    await user.click(screen.getByRole("button", { name: "질문 보내기" }));
+
+    expect(await screen.findByText(/안녕하세요!/)).toBeVisible();
+    expect(screen.queryByText("확인 가능한 계약 또는 계산 근거가 없습니다.")).toBeNull();
+  });
+
   it("sends a suggested question and links the returned evidence to its contract", async () => {
     let requestBody: unknown;
     server.use(
@@ -80,11 +104,47 @@ describe("ChatPage", () => {
     );
   });
 
+  it("renders a RAG citation with source type and page without a fake link", async () => {
+    server.use(
+      http.post(chatUrl, () =>
+        HttpResponse.json({
+          answer: "계약서의 취소 조항을 확인했습니다.",
+          answerType: "RAG",
+          usedRag: true,
+          citations: [
+            {
+              contractId: null,
+              documentId: null,
+              sourceType: "DOMAIN_KNOWLEDGE",
+              title: "웨딩 계약 용어 안내",
+              clauseTitle: "위약금과 환불 규정",
+              page: 3,
+              label: "웨딩 계약 용어 안내 · 위약금과 환불 규정",
+              sourceText: "환불 가능 여부는 실제 계약 조항을 확인해야 합니다.",
+            },
+          ],
+          calculation: null,
+        }),
+      ),
+    );
+
+    const user = userEvent.setup();
+    render(<ChatPage />);
+    await user.type(screen.getByLabelText("AI 플래너에게 질문하기"), "위약금이 뭐야?");
+    await user.click(screen.getByRole("button", { name: "질문 보내기" }));
+
+    expect(await screen.findByText("DOMAIN_KNOWLEDGE · 3페이지")).toBeVisible();
+    expect(screen.queryByRole("link", { name: /웨딩 계약 용어 안내/ })).not.toBeInTheDocument();
+  });
+
   it("keeps the failed question and retries it", async () => {
     let calls = 0;
+    const requestBodies: unknown[] = [];
+    window.localStorage.setItem("mairry.chat.conversationId", "conversation-existing");
     server.use(
-      http.post(chatUrl, () => {
+      http.post(chatUrl, async ({ request }) => {
         calls += 1;
+        requestBodies.push(await request.json());
         if (calls === 1) {
           return HttpResponse.json(
             { error: { code: "CHAT_FAILED", message: "답변 생성에 실패했습니다." } },
@@ -110,6 +170,75 @@ describe("ChatPage", () => {
     await user.click(screen.getByRole("button", { name: "다시 시도" }));
     expect(await screen.findByText("다시 확인했습니다.")).toBeVisible();
     await waitFor(() => expect(calls).toBe(2));
+    expect(requestBodies).toEqual([
+      { conversationId: "conversation-existing", message: "확인해줘" },
+      { conversationId: "conversation-existing", message: "확인해줘" },
+    ]);
+  });
+
+  it("reuses the returned conversation id for the next question", async () => {
+    const requestBodies: unknown[] = [];
+    server.use(
+      http.post(chatUrl, async ({ request }) => {
+        requestBodies.push(await request.json());
+        return HttpResponse.json({
+          conversationId: "conversation-1",
+          messageId: `message-${requestBodies.length}`,
+          answer: `답변 ${requestBodies.length}`,
+          answerType: "CONTRACT",
+          citations: [],
+          calculation: null,
+        });
+      }),
+    );
+
+    const user = userEvent.setup();
+    render(<ChatPage />);
+    const input = screen.getByLabelText("AI 플래너에게 질문하기");
+    await user.type(input, "첫 질문");
+    await user.click(screen.getByRole("button", { name: "질문 보내기" }));
+    expect(await screen.findByText("답변 1")).toBeVisible();
+    await user.type(input, "후속 질문");
+    await user.click(screen.getByRole("button", { name: "질문 보내기" }));
+    expect(await screen.findByText("답변 2")).toBeVisible();
+
+    expect(requestBodies).toEqual([
+      { message: "첫 질문" },
+      { conversationId: "conversation-1", message: "후속 질문" },
+    ]);
+    expect(window.localStorage.getItem("mairry.chat.conversationId")).toBe("conversation-1");
+  });
+
+  it("restores a conversation id after refresh and clears it for a new conversation", async () => {
+    const requestBodies: unknown[] = [];
+    window.localStorage.setItem("mairry.chat.conversationId", "conversation-restored");
+    server.use(
+      http.post(chatUrl, async ({ request }) => {
+        requestBodies.push(await request.json());
+        return HttpResponse.json({
+          conversationId: "conversation-new",
+          messageId: "message-new",
+          answer: "확인했습니다.",
+          answerType: "NOT_FOUND",
+          citations: [],
+          calculation: null,
+        });
+      }),
+    );
+
+    const user = userEvent.setup();
+    render(<ChatPage />);
+    const input = screen.getByLabelText("AI 플래너에게 질문하기");
+    await user.type(input, "지워질 초안");
+    await user.click(screen.getByRole("button", { name: "새 질문" }));
+    expect(window.localStorage.getItem("mairry.chat.conversationId")).toBeNull();
+    expect(input).toHaveValue("");
+    expect(input).toHaveFocus();
+    await user.type(input, "새 질문");
+    await user.click(screen.getByRole("button", { name: "질문 보내기" }));
+    await screen.findByText("확인했습니다.");
+
+    expect(requestBodies).toEqual([{ message: "새 질문" }]);
   });
 
   it("does not allow a blank question", async () => {

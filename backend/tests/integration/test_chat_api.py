@@ -12,6 +12,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.orm import Session
 
+from ai.rag.schemas import KnowledgeType, RetrievedChunk
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
 from app.core.enums import (
@@ -66,6 +67,8 @@ def _configuration(database_url: str, user_id: uuid.UUID) -> Settings:
         demo_user_login_id=f"chat-{user_id}",
         demo_user_display_name="Chat Demo",
         demo_user_email=None,
+        ai_api_key="",
+        ai_model="",
     )
 
 
@@ -85,6 +88,7 @@ def _create_plan_with_contract(
     company: str,
     amount: int,
     source_text: str,
+    document_type: DocumentType = DocumentType.WEDDING_HALL,
 ) -> uuid.UUID:
     plan_id = uuid.uuid4()
     member_id = uuid.uuid4()
@@ -131,7 +135,7 @@ def _create_plan_with_contract(
         id=uuid.uuid4(),
         wedding_plan_id=plan_id,
         document_id=document_id,
-        document_type=DocumentType.WEDDING_HALL,
+        document_type=document_type,
         company=company,
         total_price=23_000_000,
         status=ContractStatus.CONFIRMED,
@@ -202,6 +206,7 @@ def _cleanup(engine: Engine, user_ids: list[uuid.UUID]) -> None:
 
 def test_chat_golden_path_uses_owned_contract_and_finance_data(
     database_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     user_id = uuid.uuid4()
     other_user_id = uuid.uuid4()
@@ -214,6 +219,10 @@ def test_chat_golden_path_uses_owned_contract_and_finance_data(
             amount=20_000_000,
             source_text="잔금 20,000,000원은 2099년 4월 30일까지",
         )
+        created_contract = session.get(Contract, contract_id)
+        assert created_contract is not None
+        document_id = created_contract.document_id
+        plan_id = created_contract.wedding_plan_id
         _create_plan_with_contract(
             session,
             other_user_id,
@@ -222,6 +231,46 @@ def test_chat_golden_path_uses_owned_contract_and_finance_data(
             source_text="다른 사용자의 비공개 근거",
         )
         session.commit()
+        finance_snapshot = (
+            tuple(session.scalars(select(Asset.amount).where(Asset.wedding_plan_id == plan_id))),
+            tuple(
+                session.scalars(
+                    select(Payment.amount)
+                    .join(Contract)
+                    .where(Contract.wedding_plan_id == plan_id)
+                    .order_by(Payment.id)
+                )
+            ),
+        )
+
+    rag_calls: list[list[str]] = []
+
+    def search_without_external_embedding(
+        _service,
+        queries: list[str],
+        **_kwargs: object,
+    ) -> list[RetrievedChunk]:
+        rag_calls.append(queries)
+        return [
+            RetrievedChunk(
+                chunk_id="a" * 64,
+                content_hash="b" * 64,
+                content="예식 90일 전까지 계약금을 환급합니다.",
+                knowledge_type=KnowledgeType.CONTRACT_CLAUSE,
+                title="A웨딩홀 계약서",
+                clause_title="취소·환불 조건",
+                page=None,
+                chunk_index=0,
+                score=1.0,
+                document_id=document_id,
+                contract_id=contract_id,
+            )
+        ]
+
+    monkeypatch.setattr(
+        "app.application.chat_orchestration.RagSearchService.search",
+        search_without_external_embedding,
+    )
 
     _override_dependencies(database_engine, _configuration(str(database_engine.url), user_id))
     client = TestClient(app)
@@ -232,15 +281,46 @@ def test_chat_golden_path_uses_owned_contract_and_finance_data(
             "/api/chat",
             json={"message": "가전 비용 300만 원을 추가하면 괜찮아?"},
         )
+        follow_up = client.post(
+            "/api/chat",
+            json={
+                "conversationId": simulation.json()["conversationId"],
+                "message": "그럼 300만원 써도 되는 거야?",
+            },
+        )
         cancellation = client.post("/api/chat", json={"message": "웨딩홀 취소 조건 알려줘"})
 
-        assert schedule.status_code == finance.status_code == simulation.status_code == 200
+        assert (
+            schedule.status_code
+            == finance.status_code
+            == simulation.status_code
+            == follow_up.status_code
+            == 200
+        )
         assert "2099-04-30" in schedule.json()["answer"]
         assert schedule.json()["citations"][0]["contractId"] == str(contract_id)
         assert "비공개" not in str(schedule.json())
         assert finance.json()["calculation"]["expectedBalance"] == 10_000_000
         assert simulation.json()["calculation"]["simulatedExpectedBalance"] == 7_000_000
+        assert follow_up.json()["conversationId"] == simulation.json()["conversationId"]
+        assert follow_up.json()["calculation"]["simulatedExpectedBalance"] == 7_000_000
+        assert "예산 부족 상태는 아니" in follow_up.json()["answer"]
         assert cancellation.json()["citations"][0]["sourceText"].startswith("예식 90일 전")
+        assert len(rag_calls) == 1
+        with Session(database_engine) as session:
+            assert finance_snapshot == (
+                tuple(
+                    session.scalars(select(Asset.amount).where(Asset.wedding_plan_id == plan_id))
+                ),
+                tuple(
+                    session.scalars(
+                        select(Payment.amount)
+                        .join(Contract)
+                        .where(Contract.wedding_plan_id == plan_id)
+                        .order_by(Payment.id)
+                    )
+                ),
+            )
     finally:
         app.dependency_overrides.clear()
         _cleanup(database_engine, [user_id, other_user_id])
@@ -262,3 +342,121 @@ def test_chat_without_plan_returns_insufficient_data_without_numbers(
     finally:
         app.dependency_overrides.clear()
         _cleanup(database_engine, [user_id])
+
+
+def test_personal_contract_lookup_isolates_plans_and_keeps_rag_questions_separate(
+    database_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan_a_user = uuid.uuid4()
+    plan_b_user = uuid.uuid4()
+    _cleanup(database_engine, [plan_a_user, plan_b_user])
+    with Session(database_engine) as session:
+        _create_plan_with_contract(
+            session,
+            plan_a_user,
+            company="플랜A 웨딩홀",
+            amount=12_000_000,
+            source_text="플랜A 잔금 근거",
+        )
+        studio_contract_id = _create_plan_with_contract(
+            session,
+            plan_b_user,
+            company="플랜B 오뜨꾸뛰르 스튜디오",
+            amount=4_000_000,
+            source_text="플랜B 스튜디오 잔금 근거",
+            document_type=DocumentType.UNKNOWN,
+        )
+        session.commit()
+
+    rag_calls: list[set[KnowledgeType]] = []
+
+    def search_without_external_embedding(
+        _service,
+        _queries: list[str],
+        *,
+        knowledge_types: set[KnowledgeType],
+        **_kwargs: object,
+    ) -> list[RetrievedChunk]:
+        rag_calls.append(knowledge_types)
+        if knowledge_types == {KnowledgeType.DOMAIN_KNOWLEDGE}:
+            return [
+                RetrievedChunk(
+                    chunk_id="d" * 64,
+                    content_hash="e" * 64,
+                    content="스튜디오·드레스·메이크업을 묶어 부르는 말입니다.",
+                    knowledge_type=KnowledgeType.DOMAIN_KNOWLEDGE,
+                    title="스드메",
+                    chunk_index=0,
+                    score=1.0,
+                )
+            ]
+        if knowledge_types == {KnowledgeType.SERVICE_FAQ}:
+            return [
+                RetrievedChunk(
+                    chunk_id="f" * 64,
+                    content_hash="1" * 64,
+                    content="계약 관리 화면에서 PDF 계약서를 업로드하세요.",
+                    knowledge_type=KnowledgeType.SERVICE_FAQ,
+                    title="계약서 업로드",
+                    chunk_index=0,
+                    score=1.0,
+                )
+            ]
+        return []
+
+    monkeypatch.setattr(
+        "app.application.chat_orchestration.RagSearchService.search",
+        search_without_external_embedding,
+    )
+    try:
+        _override_dependencies(
+            database_engine,
+            _configuration(str(database_engine.url), plan_a_user),
+        )
+        plan_a = TestClient(app).post("/api/chat", json={"message": "현재 내 스드메 계약 있나?"})
+
+        _override_dependencies(
+            database_engine,
+            _configuration(str(database_engine.url), plan_b_user),
+        )
+        client = TestClient(app)
+        plan_b = client.post("/api/chat", json={"message": "현재 내 스드메 계약 있나?"})
+        all_contracts = client.post(
+            "/api/chat", json={"message": "현재 등록된 내 계약 목록 알려줘"}
+        )
+        follow_up = client.post(
+            "/api/chat",
+            json={
+                "conversationId": plan_b.json()["conversationId"],
+                "message": "그 계약은 확정됐어?",
+            },
+        )
+        definition = client.post("/api/chat", json={"message": "스드메가 뭐야?"})
+        clause = client.post("/api/chat", json={"message": "내 웨딩홀 계약 취소 조건은?"})
+        faq = client.post("/api/chat", json={"message": "계약서 업로드 방법 알려줘"})
+
+        assert all(
+            response.status_code == 200
+            for response in (plan_a, plan_b, all_contracts, follow_up, definition, clause, faq)
+        )
+        assert "없어요" in plan_a.json()["answer"]
+        assert "플랜B 오뜨꾸뛰르 스튜디오" not in str(plan_a.json())
+        assert "플랜B 오뜨꾸뛰르 스튜디오" in plan_b.json()["answer"]
+        assert "플랜A 웨딩홀" not in str(plan_b.json())
+        assert plan_b.json()["citations"] == []
+        assert plan_b.json().get("usedRag", False) is False
+        assert "플랜B 오뜨꾸뛰르 스튜디오" in all_contracts.json()["answer"]
+        assert str(studio_contract_id) not in all_contracts.json()["answer"]
+        assert "상태: 확정" in follow_up.json()["answer"]
+        assert definition.json()["citations"][0]["title"] == "스드메"
+        assert clause.json()["citations"] == []
+        assert faq.json()["citations"][0]["sourceType"] == "SERVICE_FAQ"
+        assert rag_calls == [
+            {KnowledgeType.DOMAIN_KNOWLEDGE},
+            {KnowledgeType.CONTRACT_CLAUSE},
+            {KnowledgeType.SERVICE_FAQ},
+        ]
+    finally:
+        app.dependency_overrides.clear()
+        _cleanup(database_engine, [plan_a_user, plan_b_user])

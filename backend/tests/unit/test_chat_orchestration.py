@@ -179,6 +179,51 @@ def test_chat_02_05_finance_answer_and_calculation_use_identical_values() -> Non
     assert response.calculation.remaining_expense == 20_000_000
 
 
+def test_simulation_phrase_executes_finance_tool_without_rag() -> None:
+    result = ToolResultView(
+        status="SUCCESS",
+        tool_name="simulateAdditionalExpense",
+        data={
+            "name": "가전 비용",
+            "additionalExpense": 3_000_000,
+            "currentExpectedBalance": 10_000_000,
+            "simulatedExpectedBalance": 7_000_000,
+            "shortageAmount": 0,
+        },
+        evidence=[],
+        calculated_at=NOW,
+        error=None,
+    )
+    registry = StubRegistry(result)
+
+    class RagMustNotRun:
+        def search(self, *_args: object, **_kwargs: object) -> list[object]:
+            raise AssertionError("finance simulation must not invoke RAG")
+
+    service = ChatOrchestrationService(
+        SimpleNamespace(),
+        SimpleNamespace(
+            demo_user_id=USER_ID,
+            enable_demo_fallback=True,
+            rag_history_limit=8,
+        ),
+        tool_registry=registry,  # type: ignore[arg-type]
+        rag_service=RagMustNotRun(),  # type: ignore[arg-type]
+    )
+
+    response = asyncio.run(service.process("가전 비용 300만 원을 추가하면 괜찮아?"))
+
+    assert registry.calls == [
+        (
+            "simulateAdditionalExpense",
+            {"name": "가전 비용", "amount": 3_000_000},
+            USER_ID,
+        )
+    ]
+    assert response.calculation is not None
+    assert response.calculation.simulated_expected_balance == 7_000_000
+
+
 def test_contract_question_resolves_single_contract_before_tool_call() -> None:
     result = ToolResultView(
         status="SUCCESS",
@@ -218,6 +263,90 @@ def test_chat_07_09_tool_failure_does_not_expose_or_invent_values() -> None:
     assert response.citations == []
     assert "internal details" not in response.answer
     assert not any(character.isdigit() for character in response.answer)
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("안녕", "안녕하세요"),
+        ("고마워", "도움이 되었다니"),
+        ("무엇을 물어볼 수 있어?", "추가 지출 시뮬레이션"),
+    ],
+)
+def test_general_chat_does_not_require_tool_or_rag(message: str, expected: str) -> None:
+    class MustNotRun:
+        def __getattr__(self, _name: str):
+            raise AssertionError("general chat must not use DB tools or RAG")
+
+    service = ChatOrchestrationService(
+        SimpleNamespace(),
+        SimpleNamespace(demo_user_id=USER_ID, enable_demo_fallback=True, rag_history_limit=8),
+        tool_registry=MustNotRun(),  # type: ignore[arg-type]
+        rag_service=MustNotRun(),  # type: ignore[arg-type]
+    )
+
+    response = asyncio.run(service.process(message))
+
+    assert response.answer_type.value == "GENERAL"
+    assert expected in response.answer
+    assert response.calculation is None
+    assert response.citations == []
+
+
+def test_ambiguous_balance_wording_requests_clarification_without_tools() -> None:
+    service, registry = _service(
+        ChatIntent.NEEDS_CLARIFICATION,
+        {},
+        ToolResultView(
+            status="TOOL_ERROR",
+            tool_name="unused",
+            data=None,
+            evidence=[],
+            calculated_at=NOW,
+            error=None,
+        ),
+    )
+
+    response = asyncio.run(service.process("현재 우리 잔금 알려줘"))
+
+    assert registry.calls == []
+    assert "계약별" in response.answer
+    assert "예상 잔액" in response.answer
+
+
+def test_simulation_follow_up_uses_structured_previous_calculation() -> None:
+    service, registry = _service(
+        ChatIntent.FOLLOW_UP,
+        {},
+        ToolResultView(
+            status="TOOL_ERROR",
+            tool_name="unused",
+            data=None,
+            evidence=[],
+            calculated_at=NOW,
+            error=None,
+        ),
+    )
+    previous = {
+        "toolName": "simulateAdditionalExpense",
+        "currentExpectedBalance": 24_000_000,
+        "simulatedExpectedBalance": 21_000_000,
+        "shortageAmount": 0,
+        "calculatedAt": NOW.isoformat(),
+        "expenseName": "가전제품 구매",
+        "additionalExpense": 3_000_000,
+    }
+
+    response = asyncio.run(
+        service.process("그럼 300만원 써도 되는 거야?", previous_calculation=previous)
+    )
+
+    assert registry.calls == []
+    assert "21,000,000원" in response.answer
+    assert "예산 부족 상태는 아니" in response.answer
+    assert response.calculation is not None
+    assert response.calculation.simulated_expected_balance == 21_000_000
+    assert "가전제품 구매" in (service.rewritten_question or "")
 
 
 def test_live_provider_intent_and_answer_are_connected_without_replacing_evidence() -> None:
@@ -389,3 +518,37 @@ def test_disabled_fallback_returns_ai_provider_error() -> None:
 
     assert error.value.code.value == "AI_PROVIDER_ERROR"
     assert error.value.status_code == 502
+
+
+def test_personal_contract_lookup_is_structured_and_never_invokes_rag_or_provider() -> None:
+    result = ToolResultView(
+        status="SUCCESS",
+        tool_name="getUserContracts",
+        data={"category": "스드메", "contracts": []},
+        evidence=[],
+        calculated_at=NOW,
+        error=None,
+    )
+    registry = StubRegistry(result)
+
+    class RagMustNotRun:
+        def search(self, *_args: object, **_kwargs: object) -> list[object]:
+            raise AssertionError("personal lookup must not invoke RAG")
+
+    provider = StubChatProvider(IntentDecision(ChatIntent.DOMAIN_KNOWLEDGE))
+    service = ChatOrchestrationService(
+        SimpleNamespace(),
+        SimpleNamespace(demo_user_id=USER_ID, enable_demo_fallback=True, rag_history_limit=8),
+        provider=provider,
+        tool_registry=registry,  # type: ignore[arg-type]
+        rag_service=RagMustNotRun(),  # type: ignore[arg-type]
+    )
+
+    response = asyncio.run(service.process("현재 내 스드메 계약 있나?"))
+
+    assert registry.calls == [("getUserContracts", {"query": "현재 내 스드메 계약 있나?"}, USER_ID)]
+    assert provider.classify_calls == []
+    assert provider.answer_calls == []
+    assert response.answer == "현재 웨딩 계획에 등록된 확정된 스드메 계약은 없어요."
+    assert response.citations == []
+    assert response.used_rag is False

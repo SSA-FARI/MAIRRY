@@ -82,6 +82,10 @@
 | CHAT-08 | 질문 | 필수 계획 데이터 없음 | INSUFFICIENT_DATA, 임의 계산 없음 |
 | CHAT-09 | 질문 | Tool 실행 실패 | TOOL_ERROR 안내, 추측 없음 |
 | CHAT-10 | 질문 | 동일 데이터로 동일 질문 반복 | 계산 결과 동일 |
+| CHAT-11 | 개인 계약 조회 | `현재 내 스드메 계약 있나?` | getUserContracts 호출, 업체·CONFIRMED·총액·자금계획 반영 여부, citation 없음 |
+| CHAT-12 | 계약 조회 격리 | Plan A에는 웨딩홀만, Plan B에는 스튜디오 계약 | A는 없음, B는 자기 계약만 반환 |
+| CHAT-13 | 의도 분리 | `스드메가 뭐야?` / `내 웨딩홀 계약 취소 조건은?` | DOMAIN_KNOWLEDGE / CONTRACT_CLAUSE_QA로 분리 |
+| CHAT-14 | RAG 근거 선별 | 스드메·중도금·잔금 top-k 반환 | 스드메 근거만 답변과 citation에 포함 |
 
 ## AI 샘플 평가
 
@@ -151,6 +155,29 @@ Tool 결과: dueDate=2027-04-30, amount=20000000
 - API 오류는 공통 error 형식을 따른다.
 - 서버 로그에 계약 원문과 비밀키가 출력되지 않는다.
 - 객체 스토리지 파일은 공개 접근되지 않는다.
+
+## 대화 문맥·RAG Seed 확인
+
+- 첫 질문 `라온벨 웨딩컨벤션 해지 수수료 알려줘`의 응답 `conversationId`를 후속 질문
+  `위 계약 예약금 얼마야?`에 보내면 같은 계약의 Payment 계약금 amount/status를 반환한다.
+- `그 예약금은 지금 취소하면 어떻게 돼?`는 같은 계약금 Tool 결과와 같은 contractId의 관련 취소
+  청크만 사용한다.
+- 업체명을 새로 명시한 질문은 이전 참조 계약보다 새 업체를 우선한다.
+- 새 대화는 이전 conversationId와 참조 계약을 사용하지 않는다.
+- 다른 사용자 또는 다른 현재 WeddingPlan의 conversationId는 404이며 메시지와 계약 문맥이
+  노출되지 않는다.
+- 개인 계약 목록에서 계약이 하나로 식별되면 `그 계약은 확정됐어?` 후속 질문은 같은
+  conversationId의 계약 문맥을 사용하되 현재 사용자·현재 WeddingPlan 범위를 다시 검증한다.
+- 서버 첫 시작은 Seed 4종을 적재하고, 두 번째 시작은 변경 없는 레코드를
+  `skippedUnchanged`로 기록하며 embedding API를 다시 호출하지 않는다.
+- 시작 로그에는 embedding model/version/dimensions 및 vector 개수만 있고 질문·청크 원문,
+  API key, vector 배열은 없다.
+- RAG 검색 SQL은 active/profile/WeddingPlan/GLOBAL 범위를 먼저 제한하고 pgvector cosine distance
+  `ORDER BY`와 `LIMIT top-k`를 DB에서 수행한다. 다른 WeddingPlan 청크는 결과에 포함되지 않는다.
+- 서버 시작 직후와 실행 중 주기 reconciliation에서 PENDING/FAILED job을 처리하고, lease가 만료된
+  INDEXING job은 재처리한다. 최근 INDEXING 및 최대 attempts에 도달한 job은 중복 처리하지 않는다.
+- 둘 이상의 worker가 동시에 조회해도 `FOR UPDATE SKIP LOCKED` claim으로 같은 job을 중복 claim하지
+  않으며, embedding 호출 중에는 job row lock을 유지하지 않는다.
 
 ## 데모 전 체크리스트
 

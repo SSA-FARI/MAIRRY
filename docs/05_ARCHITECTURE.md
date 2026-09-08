@@ -132,12 +132,9 @@
 
 ## RAG 임베딩 확장
 
-RAG(벡터 검색 기반 근거 조회)는 `docs/00_PROJECT_PROPOSAL.md` 5-7과 `docs/06_ERD.md`의
-`document_chunks` 테이블(`embedding VECTOR(1536)`)에 이미 설계되어 있었으나, 3일 MVP 컷
-(`docs/02_MVP_SCOPE.md`, `docs/10_IMPLEMENTATION_PLAN.md`)에서 제외되어 AI 질문 기능은
-Tool Calling만으로 구현했고 현재 코드에도 `document_chunks`나 임베딩 파이프라인은 없다.
-계약서 자유 텍스트 조항(특약사항·환불/위약금·해지조건)을 벡터 검색으로 근거 제시하도록
-다시 도입할 때를 대비해, 도입 시 다음 지점에 끼워 넣는 것으로 가정한다.
+RAG(벡터 검색 기반 근거 조회)는 `document_chunks`에 청크 본문, embedding profile과 JSONB vector를
+저장한다. 계약서 자유 텍스트 조항(특약사항·환불/위약금·해지조건)은 RAG 근거로, 금액·지급 상태와
+일정은 Backend Tool의 구조화 데이터로 답한다. 혼합 질문은 Tool과 RAG를 함께 실행한다.
 
 ~~~text
 3. Backend: Document 상태를 PROCESSING으로 변경
@@ -155,8 +152,7 @@ Tool Calling만으로 구현했고 현재 코드에도 `document_chunks`나 임�
   근거로 보여주는 값이므로 원문을 그대로 보존해 인용이 깨지지 않게 한다.
 - 계약이 삭제·재검수되면 해당 documentId/contractId의 벡터도 함께 삭제한다.
 - 시드용 데이터셋 형식과 카테고리 구분은 [backend/ai/rag/datasets/README.md](../backend/ai/rag/datasets/README.md)를 따른다.
-- RAG를 다시 스코프에 포함할지, 어느 Phase에서 재도입할지는 별도로 결정한다. 마스킹 단계는
-  원래 ERD/기획에 없던 것으로, 재도입 시 함께 반영할 항목으로 제안한다.
+- Seed Dataset은 서버 시작 시 content hash를 기준으로 변경분만 멱등 임베딩한다.
 
 ## Fallback
 

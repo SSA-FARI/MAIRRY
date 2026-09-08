@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import UUID
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.core.config import get_settings
@@ -11,9 +12,16 @@ from app.main import app
 
 class StubChatOrchestrationService:
     def __init__(self, *args: object, **kwargs: object) -> None:
-        pass
+        self.referenced_contract_id = None
+        self.referenced_document_id = None
+        self.referenced_vendor_name = None
+        self.intent = None
+        self.tool_name = None
+        self.contract_resolution_source = None
+        self.retrieved_chunk_count = 0
+        self.calculation_context = None
 
-    async def process(self, message: str) -> ChatResponse:
+    async def process(self, message: str, **_kwargs: object) -> ChatResponse:
         assert message == "웨딩홀 잔금일이 언제야?"
         return ChatResponse(
             answer="A웨딩홀 잔금일은 2027-04-30입니다.",
@@ -29,6 +37,35 @@ class StubChatOrchestrationService:
         )
 
 
+class StubChatConversationService:
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        pass
+
+    def begin_turn(self, **_kwargs: object) -> SimpleNamespace:
+        return SimpleNamespace(
+            conversation=SimpleNamespace(id=UUID(int=10)),
+            history=[],
+            referenced_contract_id=None,
+            referenced_document_id=None,
+            referenced_vendor_name=None,
+            previous_calculation=None,
+        )
+
+    def complete_turn(self, *_args: object, **_kwargs: object) -> UUID:
+        return UUID(int=11)
+
+    def rollback(self) -> None:
+        pass
+
+
+@pytest.fixture(autouse=True)
+def stub_chat_conversations(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.domains.chat.router.ChatConversationService",
+        StubChatConversationService,
+    )
+
+
 def test_chat_response_matches_public_contract(monkeypatch) -> None:
     monkeypatch.setattr(
         "app.domains.chat.router.ChatOrchestrationService",
@@ -42,6 +79,8 @@ def test_chat_response_matches_public_contract(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.json() == {
+        "conversationId": "00000000-0000-0000-0000-00000000000a",
+        "messageId": "00000000-0000-0000-0000-00000000000b",
         "answer": "A웨딩홀 잔금일은 2027-04-30입니다.",
         "answerType": "CONTRACT",
         "citations": [
@@ -68,9 +107,30 @@ def test_chat_rejects_blank_extra_and_too_long_messages() -> None:
         assert response.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
+def test_general_greeting_does_not_require_a_wedding_plan(monkeypatch) -> None:
+    class MustNotStartConversation:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            raise AssertionError("general greeting must not query a wedding plan")
+
+    monkeypatch.setattr(
+        "app.domains.chat.router.ChatConversationService",
+        MustNotStartConversation,
+    )
+
+    response = TestClient(app).post("/api/chat", json={"message": "안녕"})
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "answer": "안녕하세요! 계약 내용, 지급 일정, 남은 예산에 관해 무엇이든 물어보세요.",
+        "answerType": "GENERAL",
+        "citations": [],
+        "calculation": None,
+    }
+
+
 def test_chat_calculation_omits_unrelated_nullable_fields(monkeypatch) -> None:
     class CalculationService(StubChatOrchestrationService):
-        async def process(self, _message: str) -> ChatResponse:
+        async def process(self, _message: str, **_kwargs: object) -> ChatResponse:
             return ChatResponse(
                 answer="예상 잔액은 7,000,000원입니다.",
                 answer_type="CALCULATION",
@@ -112,6 +172,9 @@ def test_generated_openapi_chat_shapes_are_typed() -> None:
     assert schemas["ChatResponse"]["properties"]["citations"]["items"] == {
         "$ref": "#/components/schemas/Citation"
     }
+    assert schemas["ChatRequest"]["properties"]["conversationId"]["anyOf"][0]["format"] == "uuid"
+    assert schemas["ChatResponse"]["properties"]["conversationId"]["anyOf"][0]["format"] == "uuid"
+    assert schemas["ChatResponse"]["properties"]["messageId"]["anyOf"][0]["format"] == "uuid"
 
 
 def test_chat_returns_502_when_provider_and_fallback_are_unavailable() -> None:
@@ -135,3 +198,23 @@ def test_chat_returns_502_when_provider_and_fallback_are_unavailable() -> None:
             "details": {},
         }
     }
+
+
+def test_new_chat_without_plan_returns_guidance_without_numbers(monkeypatch) -> None:
+    class MissingPlanConversationService(StubChatConversationService):
+        def begin_turn(self, **_kwargs: object) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "app.domains.chat.router.ChatConversationService",
+        MissingPlanConversationService,
+    )
+
+    response = TestClient(app).post("/api/chat", json={"message": "남은 금액 알려줘"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["answerType"] == "NOT_FOUND"
+    assert payload["calculation"] is None
+    assert payload["citations"] == []
+    assert not any(character.isdigit() for character in payload["answer"])

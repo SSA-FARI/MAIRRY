@@ -72,6 +72,8 @@ try {
                 Assert-LastExitCode "Frontend lint"
                 docker compose run --rm frontend pnpm typecheck
                 Assert-LastExitCode "Frontend typecheck"
+                docker compose run --rm frontend pnpm test
+                Assert-LastExitCode "Frontend tests"
                 docker compose run --rm frontend pnpm build
                 Assert-LastExitCode "Frontend production build"
                 # Docker Desktop marks bind-mounted Windows files executable. Ignore only that
@@ -81,8 +83,9 @@ try {
                 docker compose run --rm backend python -m ruff format --check app ai tests
                 Assert-LastExitCode "Backend format check"
                 # Unit/integration tests must be deterministic and must never use a developer's
-                # live AI credentials from the root .env file.
-                docker compose run --rm -e AI_API_KEY= -e AI_MODEL= backend python -m pytest -p no:cacheprovider
+                # live AI credentials or development database from the root .env file.
+                docker compose run --rm -e AI_API_KEY= -e AI_MODEL= backend `
+                    sh -c 'export DATABASE_URL="$TEST_DATABASE_URL"; python -m pytest -p no:cacheprovider'
                 Assert-LastExitCode "Backend tests"
             }
             finally {
