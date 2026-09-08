@@ -57,7 +57,8 @@ def test_pgvector_orders_and_limits_ten_thousand_vectors_in_database(
                 """
                 INSERT INTO rag_vector_benchmark (id, embedding)
                 SELECT value,
-                       ('[' || value::text || ',' || repeat('0,', 1534) || '1]')::vector(1536)
+                       ('[1,' || (10000 - value)::text || ',' ||
+                        repeat('0,', 1533) || '0]')::vector(1536)
                 FROM generate_series(1, 10000) AS value
                 """
             )
