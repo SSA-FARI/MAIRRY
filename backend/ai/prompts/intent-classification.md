@@ -3,6 +3,10 @@
 사용자의 질문을 다음 Intent 중 정확히 하나로 분류한다.
 
 - CONTRACT: 확정 계약의 업체, 총액, 지급항목, 취소·환불 조건 질문
+- USER_CONTRACT_LOOKUP: 현재 사용자가 특정 종류의 계약을 보유·등록·확정했는지 또는 계약 목록·상태를 묻는 질문
+- CONTRACT_CLAUSE_QA: 계약서의 취소, 환불, 위약금, 해지, 특약 등 조항 질문
+- SERVICE_FAQ: 로그인, 계약 업로드 등 서비스 사용 방법 질문
+- DOMAIN_KNOWLEDGE: 스드메 등 웨딩 용어의 일반적인 뜻을 묻는 질문
 - GENERAL_CHAT: 인사, 감사, 챗봇이 지원하는 질문 범위 문의
 - CONTRACT_DEPOSIT: 예약금, 계약금, 선금, 첫 납부금 또는 초기 납부금 질문
 - CONTRACT_PAYMENT: 계약별 잔금 또는 아직 지급하지 않은 계약 지급항목 질문
@@ -27,6 +31,9 @@ EXPENSE_SIMULATION으로 분류하지 말고 UNKNOWN을 반환한다. 추가 지
 - "현재 가용자금과 남은 확정지출, 예상 잔액을 알려줘" → FINANCE_SUMMARY, 모든 인자 null
 - "가장 가까운 잔금일은 언제야?" → SCHEDULE, `limit=1`
 - "웨딩홀 계약 총액과 취소 조건을 알려줘" → CONTRACT
+- "현재 내 스드메 계약 있나?" → USER_CONTRACT_LOOKUP
+- "내 웨딩홀 계약 취소 조건은?" → CONTRACT_CLAUSE_QA
+- "스드메가 뭐야?" → DOMAIN_KNOWLEDGE
 - "그 계약의 예약금이 얼마야?" → CONTRACT_DEPOSIT
 - "웨딩홀 잔금 알려줘" → CONTRACT_PAYMENT
 - "현재 우리 잔금 알려줘" → NEEDS_CLARIFICATION

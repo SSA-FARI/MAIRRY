@@ -20,6 +20,36 @@ _GENERAL_HELP = ("어떤 걸 물어볼 수 있어", "무엇을 물어볼 수 있
 _FOLLOW_UP_MARKERS = ("그럼", "그러면", "그래도", "그 금액", "그거")
 _CALCULATION_FOLLOW_UP_WORDS = ("써도", "사용해도", "괜찮", "부족", "얼마 남", "잔액", "금액")
 _CONTRACT_TARGETS = ("계약별", "계약", "웨딩홀", "스튜디오", "드레스", "메이크업", "업체")
+_CONTRACT_CLAUSE_WORDS = ("취소", "환불", "위약금", "해지", "특약", "보증인원", "일정 변경")
+_CONTRACT_LOOKUP_TARGETS = (
+    "계약",
+    "계약서",
+    "스드메",
+    "스 드 메",
+    "스튜디오",
+    "드레스",
+    "메이크업",
+    "웨딩홀",
+    "촬영 패키지",
+)
+_CONTRACT_LOOKUP_MARKERS = (
+    "내 ",
+    "내가 ",
+    "우리 ",
+    "현재 ",
+    "보유",
+    "등록한",
+    "등록된",
+    "올린",
+    "확정한",
+    "있나",
+    "있어",
+    "있는지",
+    "목록",
+    "현황",
+    "상태",
+    "확정됐",
+)
 
 
 def classify_message(message: str) -> IntentDecision:
@@ -27,9 +57,8 @@ def classify_message(message: str) -> IntentDecision:
     contract_id = _extract_contract_id(normalized)
 
     general_phrase = normalized.rstrip("!?., ")
-    if (
-        general_phrase in _GENERAL_GREETINGS + _GENERAL_THANKS
-        or _contains_any(normalized, _GENERAL_HELP)
+    if general_phrase in _GENERAL_GREETINGS + _GENERAL_THANKS or _contains_any(
+        normalized, _GENERAL_HELP
     ):
         return _decision(ChatIntent.GENERAL_CHAT)
 
@@ -82,6 +111,9 @@ def classify_message(message: str) -> IntentDecision:
     ):
         return _decision(ChatIntent.FINANCE_SUMMARY)
 
+    if _looks_like_user_contract_lookup(normalized):
+        return _decision(ChatIntent.USER_CONTRACT_LOOKUP)
+
     if _contains_any(
         normalized,
         ("지급일", "잔금일", "납부일", "결제일", "지급 일정", "결제 일정", "언제"),
@@ -95,6 +127,15 @@ def classify_message(message: str) -> IntentDecision:
         arguments = {"contractId": contract_id} if contract_id is not None else {}
         return _decision(ChatIntent.CONTRACT_PAYMENT, arguments)
 
+    if _contains_any(normalized, _CONTRACT_CLAUSE_WORDS):
+        return _decision(ChatIntent.CONTRACT_CLAUSE_QA)
+
+    if _contains_any(normalized, ("로그인", "업로드", "사용법", "다시 시도")):
+        return _decision(ChatIntent.SERVICE_FAQ)
+
+    if _contains_any(normalized, ("뭐야", "무슨 뜻", "뜻이")):
+        return _decision(ChatIntent.DOMAIN_KNOWLEDGE)
+
     if _contains_any(
         normalized,
         ("계약", "취소", "환불", "위약금", "업체", "웨딩홀"),
@@ -103,6 +144,14 @@ def classify_message(message: str) -> IntentDecision:
         return _decision(ChatIntent.CONTRACT, arguments)
 
     return _decision(ChatIntent.UNKNOWN)
+
+
+def _looks_like_user_contract_lookup(message: str) -> bool:
+    if _contains_any(message, _CONTRACT_CLAUSE_WORDS):
+        return False
+    compact = re.sub(r"[\s·ㆍ/]", "", message)
+    has_target = _contains_any(message, _CONTRACT_LOOKUP_TARGETS) or "스드메" in compact
+    return has_target and _contains_any(message, _CONTRACT_LOOKUP_MARKERS)
 
 
 def _decision(intent: ChatIntent, arguments: dict[str, Any] | None = None) -> IntentDecision:

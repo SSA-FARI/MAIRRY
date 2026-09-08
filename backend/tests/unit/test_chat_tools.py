@@ -276,3 +276,72 @@ def test_contract_deposit_cannot_read_contract_outside_current_plan() -> None:
 
     assert result.status == "NOT_FOUND"
     assert result.data is None
+
+
+def test_user_sdm_lookup_uses_current_plan_and_structured_filters() -> None:
+    registry = _registry()
+    studio_contract = _contract(_payment(31, due_date=date(2027, 5, 1)))
+    studio_contract.document_type = DocumentType.UNKNOWN
+    studio_contract.company = "오뜨꾸뛰르 스튜디오"
+    calls: list[tuple[UUID, tuple[str, ...], tuple[object, ...]]] = []
+
+    def list_matching(plan_id, *, company_terms, document_types):
+        calls.append((plan_id, company_terms, document_types))
+        return [studio_contract]
+
+    registry._contracts.list_confirmed_matching = list_matching
+
+    result = registry.execute(
+        "getUserContracts",
+        {"query": "현재 내 스드메 계약 있나?"},
+        USER_ID,
+    )
+
+    assert calls[0][0] == PLAN_ID
+    assert {"스튜디오", "드레스", "메이크업"}.issubset(calls[0][1])
+    assert result.status == "SUCCESS"
+    assert result.data is not None
+    assert result.data["contracts"][0]["company"] == "오뜨꾸뛰르 스튜디오"
+    assert result.data["contracts"][0]["status"] == "CONFIRMED"
+    assert result.data["contracts"][0]["financeReflected"] is True
+    assert result.evidence == []
+
+
+def test_user_sdm_lookup_returns_successful_empty_result_without_rag_evidence() -> None:
+    registry = _registry()
+    registry._contracts.list_confirmed_matching = lambda *_args, **_kwargs: []
+
+    result = registry.execute(
+        "getUserContracts",
+        {"query": "내 스 드 메 계약이 있어?"},
+        USER_ID,
+    )
+
+    assert result.status == "SUCCESS"
+    assert result.data == {"category": "스드메", "contracts": []}
+    assert result.evidence == []
+
+
+def test_user_contract_lookup_returns_multiple_confirmed_contracts() -> None:
+    registry = _registry()
+    hall = _contract()
+    studio = _contract()
+    studio.id = UUID(int=44)
+    studio.document_id = UUID(int=45)
+    studio.company = "오뜨꾸뛰르 스튜디오"
+    studio.document_type = DocumentType.UNKNOWN
+    registry._contracts.list_confirmed_matching = lambda *_args, **_kwargs: [hall, studio]
+
+    result = registry.execute(
+        "getUserContracts",
+        {"query": "현재 등록된 내 계약 목록 알려줘"},
+        USER_ID,
+    )
+
+    assert result.status == "SUCCESS"
+    assert result.data is not None
+    assert [contract["company"] for contract in result.data["contracts"]] == [
+        "A웨딩홀",
+        "오뜨꾸뛰르 스튜디오",
+    ]
+    assert result.evidence == []

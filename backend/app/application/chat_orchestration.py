@@ -190,6 +190,26 @@ class ChatOrchestrationService:
                 "decision": deterministic,
                 "use_provider": False,
             }
+        deterministic_routes = {
+            ChatIntent.USER_CONTRACT_LOOKUP: (RagRoute.TOOL, set()),
+            ChatIntent.CONTRACT_CLAUSE_QA: (
+                RagRoute.RAG,
+                {KnowledgeType.CONTRACT_CLAUSE},
+            ),
+            ChatIntent.SERVICE_FAQ: (RagRoute.RAG, {KnowledgeType.SERVICE_FAQ}),
+            ChatIntent.DOMAIN_KNOWLEDGE: (
+                RagRoute.RAG,
+                {KnowledgeType.DOMAIN_KNOWLEDGE},
+            ),
+        }
+        if deterministic.intent in deterministic_routes:
+            route, knowledge_types = deterministic_routes[deterministic.intent]
+            return {
+                "route": route,
+                "knowledge_types": knowledge_types,
+                "decision": deterministic,
+                "use_provider": route == RagRoute.RAG and self._provider is not None,
+            }
         route, knowledge_types = classify_rag_route(state["rewritten_question"])
         decision = IntentDecision(ChatIntent.UNKNOWN, {})
         use_provider = False
@@ -307,7 +327,11 @@ class ChatOrchestrationService:
             return self._rag.search(queries, **search_arguments)
 
     async def _generate(self, state: ChatState) -> dict[str, Any]:
-        chunks = state.get("retrieved_chunks", [])
+        chunks = self._select_answer_chunks(
+            state["question"],
+            state.get("retrieved_chunks", []),
+            state.get("knowledge_types", set()),
+        )
         tool_result = state.get("tool_result")
         if state["route"] == RagRoute.GENERAL:
             intent = state["decision"].intent
@@ -337,11 +361,9 @@ class ChatOrchestrationService:
             return {"response": self._to_response(tool_draft)}
 
         citations = [self._citation(chunk) for chunk in chunks]
-        evidence_summary = "\n\n".join(
-            f"[{chunk.title}{' · ' + chunk.clause_title if chunk.clause_title else ''}]\n{chunk.content}"
-            for chunk in chunks[:3]
-        )
-        grounded = "확인된 근거는 다음과 같습니다.\n" + evidence_summary
+        primary = chunks[0]
+        heading = " · ".join(filter(None, [primary.title, primary.clause_title]))
+        grounded = f"{heading}에서 확인한 내용은 다음과 같아요. {primary.content}"
         if any(chunk.knowledge_type == KnowledgeType.CONTRACT_CLAUSE for chunk in chunks):
             grounded += "\n\n계약 조건은 원문과 업체에 최종 확인해 주세요."
         answer = f"{tool_draft.answer}\n\n{grounded}" if tool_draft else grounded
@@ -385,7 +407,15 @@ class ChatOrchestrationService:
         references_previous_contract: bool = False,
     ) -> ToolResultView | None:
         arguments = dict(decision.arguments)
-        self.contract_resolution_source = "provider_argument" if "contractId" in arguments else None
+        if decision.intent == ChatIntent.USER_CONTRACT_LOOKUP:
+            arguments["query"] = message
+            if referenced_contract_id is not None and references_previous_contract:
+                arguments["contractId"] = str(referenced_contract_id)
+                self.contract_resolution_source = "conversation_context"
+        if self.contract_resolution_source != "conversation_context":
+            self.contract_resolution_source = (
+                "provider_argument" if "contractId" in arguments else None
+            )
         if (
             decision.intent
             in {
@@ -433,6 +463,9 @@ class ChatOrchestrationService:
         if result is None or result.status != "SUCCESS" or result.data is None:
             return {}
         raw_contract_id = result.data.get("contractId") or result.data.get("id")
+        contracts = result.data.get("contracts", [])
+        if raw_contract_id is None and len(contracts) == 1:
+            raw_contract_id = contracts[0].get("contractId")
         if raw_contract_id is None:
             payments = result.data.get("payments", [])
             raw_contract_id = payments[0].get("contractId") if len(payments) == 1 else None
@@ -440,14 +473,50 @@ class ChatOrchestrationService:
             contract_id = UUID(str(raw_contract_id)) if raw_contract_id else None
         except ValueError:
             contract_id = None
+        single_contract = contracts[0] if len(contracts) == 1 else {}
         context = {
             "referenced_contract_id": contract_id,
             "referenced_document_id": (
-                UUID(str(result.data["documentId"])) if result.data.get("documentId") else None
+                UUID(str(result.data.get("documentId") or single_contract.get("documentId")))
+                if result.data.get("documentId") or single_contract.get("documentId")
+                else None
             ),
-            "referenced_vendor_name": result.data.get("company"),
+            "referenced_vendor_name": result.data.get("company") or single_contract.get("company"),
         }
         return {key: value for key, value in context.items() if value is not None}
+
+    @staticmethod
+    def _select_answer_chunks(
+        question: str,
+        chunks: list[RetrievedChunk],
+        knowledge_types: set[KnowledgeType],
+    ) -> list[RetrievedChunk]:
+        """Promote only directly relevant, distinct retrieval candidates to evidence."""
+        compact_question = "".join(character for character in question if character.isalnum())
+        selected: list[RetrievedChunk] = []
+        seen_content: set[str] = set()
+        seen_clause: set[tuple[UUID | None, UUID | None, str | None]] = set()
+        for chunk in chunks:
+            compact_title = "".join(character for character in chunk.title if character.isalnum())
+            if (
+                KnowledgeType.DOMAIN_KNOWLEDGE in knowledge_types
+                and compact_title
+                and compact_title not in compact_question
+            ):
+                continue
+            normalized_content = " ".join(chunk.content.split()).casefold()
+            clause_key = (chunk.contract_id, chunk.document_id, chunk.clause_title)
+            duplicate_clause = chunk.clause_title is not None and clause_key in seen_clause
+            if normalized_content in seen_content or duplicate_clause:
+                continue
+            seen_content.add(normalized_content)
+            if chunk.clause_title is not None:
+                seen_clause.add(clause_key)
+            selected.append(chunk)
+            limit = 3 if KnowledgeType.CONTRACT_CLAUSE in knowledge_types else 1
+            if len(selected) >= limit:
+                break
+        return selected
 
     async def _classify_intent(self, message: str) -> tuple[IntentDecision, bool]:
         if self._provider is None:

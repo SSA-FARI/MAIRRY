@@ -82,6 +82,10 @@
 | CHAT-08 | 질문 | 필수 계획 데이터 없음 | INSUFFICIENT_DATA, 임의 계산 없음 |
 | CHAT-09 | 질문 | Tool 실행 실패 | TOOL_ERROR 안내, 추측 없음 |
 | CHAT-10 | 질문 | 동일 데이터로 동일 질문 반복 | 계산 결과 동일 |
+| CHAT-11 | 개인 계약 조회 | `현재 내 스드메 계약 있나?` | getUserContracts 호출, 업체·CONFIRMED·총액·자금계획 반영 여부, citation 없음 |
+| CHAT-12 | 계약 조회 격리 | Plan A에는 웨딩홀만, Plan B에는 스튜디오 계약 | A는 없음, B는 자기 계약만 반환 |
+| CHAT-13 | 의도 분리 | `스드메가 뭐야?` / `내 웨딩홀 계약 취소 조건은?` | DOMAIN_KNOWLEDGE / CONTRACT_CLAUSE_QA로 분리 |
+| CHAT-14 | RAG 근거 선별 | 스드메·중도금·잔금 top-k 반환 | 스드메 근거만 답변과 citation에 포함 |
 
 ## AI 샘플 평가
 
@@ -162,6 +166,8 @@ Tool 결과: dueDate=2027-04-30, amount=20000000
 - 새 대화는 이전 conversationId와 참조 계약을 사용하지 않는다.
 - 다른 사용자 또는 다른 현재 WeddingPlan의 conversationId는 404이며 메시지와 계약 문맥이
   노출되지 않는다.
+- 개인 계약 목록에서 계약이 하나로 식별되면 `그 계약은 확정됐어?` 후속 질문은 같은
+  conversationId의 계약 문맥을 사용하되 현재 사용자·현재 WeddingPlan 범위를 다시 검증한다.
 - 서버 첫 시작은 Seed 4종을 적재하고, 두 번째 시작은 변경 없는 레코드를
   `skippedUnchanged`로 기록하며 embedding API를 다시 호출하지 않는다.
 - 시작 로그에는 embedding model/version/dimensions 및 vector 개수만 있고 질문·청크 원문,

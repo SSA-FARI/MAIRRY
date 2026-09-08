@@ -7,7 +7,7 @@ from ai.chat_agent.intent import ChatIntent
 def test_fallback_classifies_supported_intents() -> None:
     assert classify_message("가장 가까운 잔금일은 언제야?").intent == ChatIntent.SCHEDULE
     assert classify_message("남은 금액과 예상 잔액 알려줘").intent == ChatIntent.FINANCE_SUMMARY
-    assert classify_message("웨딩홀 취소 조건 알려줘").intent == ChatIntent.CONTRACT
+    assert classify_message("웨딩홀 취소 조건 알려줘").intent == ChatIntent.CONTRACT_CLAUSE_QA
     assert classify_message("오늘 날씨 알려줘").intent == ChatIntent.UNKNOWN
 
 
@@ -21,6 +21,24 @@ def test_fallback_distinguishes_balance_contract_payment_and_follow_up() -> None
     assert classify_message("현재 우리 잔금 알려줘").intent == ChatIntent.NEEDS_CLARIFICATION
     assert classify_message("웨딩홀 잔금 알려줘").intent == ChatIntent.CONTRACT_PAYMENT
     assert classify_message("그럼 300만원 써도 되는 거야?").intent == ChatIntent.FOLLOW_UP
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "현재 내 스드메 계약 있나?",
+        "내 스 드 메 계약이 있어?",
+        "우리 스튜디오·드레스·메이크업 계약 현황 알려줘",
+        "내가 올린 웨딩 촬영 패키지 계약서 있어?",
+    ],
+)
+def test_fallback_classifies_personal_contract_ownership_lookup(message: str) -> None:
+    assert classify_message(message).intent == ChatIntent.USER_CONTRACT_LOOKUP
+
+
+def test_fallback_separates_domain_definition_and_personal_clause_question() -> None:
+    assert classify_message("스드메가 뭐야?").intent == ChatIntent.DOMAIN_KNOWLEDGE
+    assert classify_message("내 웨딩홀 계약 취소 조건은?").intent == ChatIntent.CONTRACT_CLAUSE_QA
 
 
 def test_fallback_extracts_korean_expense_amount_without_recalculating_it() -> None:

@@ -1,9 +1,9 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.enums import ContractStatus
+from app.core.enums import ContractStatus, DocumentType
 from app.domains.contracts.models import Contract
 
 
@@ -21,6 +21,32 @@ class ContractRepository:
             .options(selectinload(Contract.payments))
             .order_by(Contract.confirmed_at.desc(), Contract.id.desc())
         )
+        return list(self._session.scalars(statement).all())
+
+    def list_confirmed_matching(
+        self,
+        wedding_plan_id: UUID,
+        *,
+        company_terms: tuple[str, ...] = (),
+        document_types: tuple[DocumentType, ...] = (),
+    ) -> list[Contract]:
+        """Return confirmed contracts in one plan, optionally filtered in SQL."""
+        filters = []
+        if company_terms:
+            filters.extend(Contract.company.ilike(f"%{term}%") for term in company_terms)
+        if document_types:
+            filters.append(Contract.document_type.in_(document_types))
+        statement = (
+            select(Contract)
+            .where(
+                Contract.wedding_plan_id == wedding_plan_id,
+                Contract.status == ContractStatus.CONFIRMED,
+            )
+            .options(selectinload(Contract.payments))
+            .order_by(Contract.confirmed_at.desc(), Contract.id.desc())
+        )
+        if filters:
+            statement = statement.where(or_(*filters))
         return list(self._session.scalars(statement).all())
 
     def get_confirmed(

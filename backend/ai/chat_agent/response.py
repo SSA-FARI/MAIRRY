@@ -22,6 +22,7 @@ def explain_tool_result(question: str, result: ToolResultView) -> AnswerDraft:
         )
 
     handlers = {
+        "getUserContracts": _explain_user_contracts,
         "getContractDetails": _explain_contract,
         "getContractDeposit": _explain_contract_deposit,
         "getContractPayments": _explain_contract_payments,
@@ -67,6 +68,34 @@ def _failure_answer(result: ToolResultView) -> str:
         "TOOL_ERROR": "정보를 조회하는 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
     }
     return messages.get(result.status, "현재 확정된 정보만으로는 답변할 수 없습니다.")
+
+
+def _explain_user_contracts(_question: str, result: ToolResultView) -> AnswerDraft:
+    assert result.data is not None
+    category = str(result.data.get("category") or "전체")
+    contracts = result.data.get("contracts", [])
+    if not contracts:
+        target = "확정 계약" if category == "전체" else f"확정된 {category} 계약"
+        return AnswerDraft(
+            answer=f"현재 웨딩 계획에 등록된 {target}은 없어요.",
+            answer_type="NOT_FOUND",
+        )
+    descriptions = []
+    for contract in contracts:
+        finance_text = (
+            "미지급 지급항목 자금계획 반영"
+            if contract.get("financeReflected")
+            else "현재 반영할 미지급 지급항목 없음"
+        )
+        descriptions.append(
+            f"{contract['company']} (상태: 확정, 총액: {_won(contract['totalPrice'])}원, "
+            f"{finance_text})"
+        )
+    target = "확정 계약" if category == "전체" else f"{category} 확정 계약"
+    return AnswerDraft(
+        answer=f"현재 {target}은 {len(contracts)}건이에요: {'; '.join(descriptions)}.",
+        answer_type="CONTRACT",
+    )
 
 
 def _explain_contract(question: str, result: ToolResultView) -> AnswerDraft:

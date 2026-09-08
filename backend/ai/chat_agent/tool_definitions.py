@@ -1,4 +1,8 @@
 TOOLS = {
+    "getUserContracts": {
+        "description": "현재 사용자의 활성 웨딩 계획에서 확정 계약 보유 현황을 조회합니다.",
+        "required": [],
+    },
     "getContractDetails": {
         "description": "특정 계약의 지급·취소조건과 원문 근거를 조회합니다.",
         "required": ["contractId"],

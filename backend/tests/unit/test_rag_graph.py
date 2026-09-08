@@ -69,6 +69,37 @@ def test_contract_clause_question_uses_rag_and_returns_matching_citation() -> No
     assert rag.calls[0][2] == PLAN_ID
 
 
+def test_domain_answer_promotes_only_directly_matching_candidate() -> None:
+    rag = StubRagSearch(
+        [
+            RetrievedChunk(
+                chunk_id=(str(index) * 64)[:64],
+                content_hash=(str(index + 3) * 64)[:64],
+                content=content,
+                knowledge_type=KnowledgeType.DOMAIN_KNOWLEDGE,
+                title=title,
+                chunk_index=index,
+                score=0.9 - index / 10,
+            )
+            for index, (title, content) in enumerate(
+                [
+                    ("스드메", "스튜디오·드레스·메이크업을 묶어 부르는 말입니다."),
+                    ("중도금", "계약 진행 중 지급하는 금액입니다."),
+                    ("잔금", "마지막에 지급하는 금액입니다."),
+                ]
+            )
+        ]
+    )
+
+    response = asyncio.run(_service(rag).process("스드메가 뭐야?"))
+
+    assert response.used_rag is True
+    assert len(response.citations) == 1
+    assert response.citations[0].title == "스드메"
+    assert "중도금" not in response.answer
+    assert "잔금" not in response.answer
+
+
 def test_follow_up_question_is_rewritten_with_recent_context() -> None:
     rag = StubRagSearch()
 

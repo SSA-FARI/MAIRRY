@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from ai.common.types import ToolResultView, ToolStatus
 from app.core.config import Settings
+from app.core.enums import DocumentType
 from app.core.error_codes import ErrorCode
 from app.core.errors import AppError
 from app.domains.contracts.models import Contract, Payment
@@ -22,6 +23,8 @@ TodayProvider = Callable[[], date]
 PAYMENT_TERM_ALIASES = {
     "DEPOSIT": frozenset({"예약금", "계약금", "선금", "첫납부금", "초기납부금", "1차납부금"})
 }
+
+SDM_TERMS = ("스드메", "스튜디오", "드레스", "메이크업", "웨딩촬영", "촬영", "패키지")
 
 
 class ChatToolRegistry:
@@ -47,6 +50,7 @@ class ChatToolRegistry:
         user_id: UUID,
     ) -> ToolResultView:
         tools = {
+            "getUserContracts": self._get_user_contracts,
             "getContractDetails": self._get_contract_details,
             "getContractDeposit": self._get_contract_deposit,
             "getContractPayments": self._get_contract_payments,
@@ -100,6 +104,51 @@ class ChatToolRegistry:
         if not matching and len(contracts) == 1:
             return contracts[0].id
         return None
+
+    def _get_user_contracts(
+        self,
+        arguments: dict[str, Any],
+        user_id: UUID,
+    ) -> ToolResultView:
+        query = arguments.get("query", "")
+        if not set(arguments).issubset({"query", "contractId"}) or not isinstance(query, str):
+            raise ValueError("getUserContracts received an invalid internal query")
+        plan = self._plans.get_current_for_user(user_id)
+        if plan is None:
+            return self._success(
+                "getUserContracts",
+                {"category": _contract_lookup_label(query), "contracts": []},
+                [],
+            )
+        contract_id = self._optional_uuid(arguments.get("contractId"))
+        if contract_id is not None:
+            matched = self._contracts.get_confirmed(plan.id, contract_id)
+            contracts = [matched] if matched is not None else []
+        else:
+            company_terms, document_types = _contract_lookup_filters(query)
+            contracts = self._contracts.list_confirmed_matching(
+                plan.id,
+                company_terms=company_terms,
+                document_types=document_types,
+            )
+        data = {
+            "category": _contract_lookup_label(query),
+            "contracts": [
+                {
+                    "contractId": str(contract.id),
+                    "documentId": str(contract.document_id),
+                    "documentType": contract.document_type.value,
+                    "company": contract.company,
+                    "totalPrice": contract.total_price,
+                    "status": contract.status.value,
+                    "financeReflected": any(
+                        payment.status.value == "UNPAID" for payment in contract.payments
+                    ),
+                }
+                for contract in contracts
+            ],
+        }
+        return self._success("getUserContracts", data, [])
 
     def resolve_explicit_contract_id(self, message: str, user_id: UUID) -> UUID | None:
         context = self.resolve_explicit_contract_context(message, user_id)
@@ -406,3 +455,25 @@ class ChatToolRegistry:
             if term.source_text
         ]
         return [*payment_evidence, *term_evidence]
+
+
+def _contract_lookup_filters(query: str) -> tuple[tuple[str, ...], tuple[DocumentType, ...]]:
+    compact = "".join(query.replace("·", " ").replace("ㆍ", " ").split())
+    if "스드메" in compact or "스튜디오드레스메이크업" in compact or "촬영패키지" in compact:
+        return SDM_TERMS, ()
+    individual_terms = tuple(term for term in ("스튜디오", "드레스", "메이크업") if term in query)
+    if individual_terms:
+        return individual_terms, ()
+    if "웨딩홀" in query:
+        return ("웨딩홀",), (DocumentType.WEDDING_HALL,)
+    return (), ()
+
+
+def _contract_lookup_label(query: str) -> str:
+    compact = "".join(query.replace("·", " ").replace("ㆍ", " ").split())
+    if "스드메" in compact or "스튜디오드레스메이크업" in compact or "촬영패키지" in compact:
+        return "스드메"
+    for term in ("스튜디오", "드레스", "메이크업", "웨딩홀"):
+        if term in query:
+            return term
+    return "전체"

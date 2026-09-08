@@ -518,3 +518,37 @@ def test_disabled_fallback_returns_ai_provider_error() -> None:
 
     assert error.value.code.value == "AI_PROVIDER_ERROR"
     assert error.value.status_code == 502
+
+
+def test_personal_contract_lookup_is_structured_and_never_invokes_rag_or_provider() -> None:
+    result = ToolResultView(
+        status="SUCCESS",
+        tool_name="getUserContracts",
+        data={"category": "스드메", "contracts": []},
+        evidence=[],
+        calculated_at=NOW,
+        error=None,
+    )
+    registry = StubRegistry(result)
+
+    class RagMustNotRun:
+        def search(self, *_args: object, **_kwargs: object) -> list[object]:
+            raise AssertionError("personal lookup must not invoke RAG")
+
+    provider = StubChatProvider(IntentDecision(ChatIntent.DOMAIN_KNOWLEDGE))
+    service = ChatOrchestrationService(
+        SimpleNamespace(),
+        SimpleNamespace(demo_user_id=USER_ID, enable_demo_fallback=True, rag_history_limit=8),
+        provider=provider,
+        tool_registry=registry,  # type: ignore[arg-type]
+        rag_service=RagMustNotRun(),  # type: ignore[arg-type]
+    )
+
+    response = asyncio.run(service.process("현재 내 스드메 계약 있나?"))
+
+    assert registry.calls == [("getUserContracts", {"query": "현재 내 스드메 계약 있나?"}, USER_ID)]
+    assert provider.classify_calls == []
+    assert provider.answer_calls == []
+    assert response.answer == "현재 웨딩 계획에 등록된 확정된 스드메 계약은 없어요."
+    assert response.citations == []
+    assert response.used_rag is False

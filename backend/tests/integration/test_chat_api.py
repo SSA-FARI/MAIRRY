@@ -88,6 +88,7 @@ def _create_plan_with_contract(
     company: str,
     amount: int,
     source_text: str,
+    document_type: DocumentType = DocumentType.WEDDING_HALL,
 ) -> uuid.UUID:
     plan_id = uuid.uuid4()
     member_id = uuid.uuid4()
@@ -134,7 +135,7 @@ def _create_plan_with_contract(
         id=uuid.uuid4(),
         wedding_plan_id=plan_id,
         document_id=document_id,
-        document_type=DocumentType.WEDDING_HALL,
+        document_type=document_type,
         company=company,
         total_price=23_000_000,
         status=ContractStatus.CONFIRMED,
@@ -341,3 +342,121 @@ def test_chat_without_plan_returns_insufficient_data_without_numbers(
     finally:
         app.dependency_overrides.clear()
         _cleanup(database_engine, [user_id])
+
+
+def test_personal_contract_lookup_isolates_plans_and_keeps_rag_questions_separate(
+    database_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan_a_user = uuid.uuid4()
+    plan_b_user = uuid.uuid4()
+    _cleanup(database_engine, [plan_a_user, plan_b_user])
+    with Session(database_engine) as session:
+        _create_plan_with_contract(
+            session,
+            plan_a_user,
+            company="플랜A 웨딩홀",
+            amount=12_000_000,
+            source_text="플랜A 잔금 근거",
+        )
+        studio_contract_id = _create_plan_with_contract(
+            session,
+            plan_b_user,
+            company="플랜B 오뜨꾸뛰르 스튜디오",
+            amount=4_000_000,
+            source_text="플랜B 스튜디오 잔금 근거",
+            document_type=DocumentType.UNKNOWN,
+        )
+        session.commit()
+
+    rag_calls: list[set[KnowledgeType]] = []
+
+    def search_without_external_embedding(
+        _service,
+        _queries: list[str],
+        *,
+        knowledge_types: set[KnowledgeType],
+        **_kwargs: object,
+    ) -> list[RetrievedChunk]:
+        rag_calls.append(knowledge_types)
+        if knowledge_types == {KnowledgeType.DOMAIN_KNOWLEDGE}:
+            return [
+                RetrievedChunk(
+                    chunk_id="d" * 64,
+                    content_hash="e" * 64,
+                    content="스튜디오·드레스·메이크업을 묶어 부르는 말입니다.",
+                    knowledge_type=KnowledgeType.DOMAIN_KNOWLEDGE,
+                    title="스드메",
+                    chunk_index=0,
+                    score=1.0,
+                )
+            ]
+        if knowledge_types == {KnowledgeType.SERVICE_FAQ}:
+            return [
+                RetrievedChunk(
+                    chunk_id="f" * 64,
+                    content_hash="1" * 64,
+                    content="계약 관리 화면에서 PDF 계약서를 업로드하세요.",
+                    knowledge_type=KnowledgeType.SERVICE_FAQ,
+                    title="계약서 업로드",
+                    chunk_index=0,
+                    score=1.0,
+                )
+            ]
+        return []
+
+    monkeypatch.setattr(
+        "app.application.chat_orchestration.RagSearchService.search",
+        search_without_external_embedding,
+    )
+    try:
+        _override_dependencies(
+            database_engine,
+            _configuration(str(database_engine.url), plan_a_user),
+        )
+        plan_a = TestClient(app).post("/api/chat", json={"message": "현재 내 스드메 계약 있나?"})
+
+        _override_dependencies(
+            database_engine,
+            _configuration(str(database_engine.url), plan_b_user),
+        )
+        client = TestClient(app)
+        plan_b = client.post("/api/chat", json={"message": "현재 내 스드메 계약 있나?"})
+        all_contracts = client.post(
+            "/api/chat", json={"message": "현재 등록된 내 계약 목록 알려줘"}
+        )
+        follow_up = client.post(
+            "/api/chat",
+            json={
+                "conversationId": plan_b.json()["conversationId"],
+                "message": "그 계약은 확정됐어?",
+            },
+        )
+        definition = client.post("/api/chat", json={"message": "스드메가 뭐야?"})
+        clause = client.post("/api/chat", json={"message": "내 웨딩홀 계약 취소 조건은?"})
+        faq = client.post("/api/chat", json={"message": "계약서 업로드 방법 알려줘"})
+
+        assert all(
+            response.status_code == 200
+            for response in (plan_a, plan_b, all_contracts, follow_up, definition, clause, faq)
+        )
+        assert "없어요" in plan_a.json()["answer"]
+        assert "플랜B 오뜨꾸뛰르 스튜디오" not in str(plan_a.json())
+        assert "플랜B 오뜨꾸뛰르 스튜디오" in plan_b.json()["answer"]
+        assert "플랜A 웨딩홀" not in str(plan_b.json())
+        assert plan_b.json()["citations"] == []
+        assert plan_b.json().get("usedRag", False) is False
+        assert "플랜B 오뜨꾸뛰르 스튜디오" in all_contracts.json()["answer"]
+        assert str(studio_contract_id) not in all_contracts.json()["answer"]
+        assert "상태: 확정" in follow_up.json()["answer"]
+        assert definition.json()["citations"][0]["title"] == "스드메"
+        assert clause.json()["citations"] == []
+        assert faq.json()["citations"][0]["sourceType"] == "SERVICE_FAQ"
+        assert rag_calls == [
+            {KnowledgeType.DOMAIN_KNOWLEDGE},
+            {KnowledgeType.CONTRACT_CLAUSE},
+            {KnowledgeType.SERVICE_FAQ},
+        ]
+    finally:
+        app.dependency_overrides.clear()
+        _cleanup(database_engine, [plan_a_user, plan_b_user])

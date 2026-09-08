@@ -49,6 +49,10 @@ class IntentDecision(AiContractModel):
         }
         allowed = {
             ChatIntent.GENERAL_CHAT: set(),
+            ChatIntent.USER_CONTRACT_LOOKUP: set(),
+            ChatIntent.CONTRACT_CLAUSE_QA: set(),
+            ChatIntent.SERVICE_FAQ: set(),
+            ChatIntent.DOMAIN_KNOWLEDGE: set(),
             ChatIntent.CONTRACT: {"contractId"},
             ChatIntent.CONTRACT_DEPOSIT: {"contractId"},
             ChatIntent.CONTRACT_PAYMENT: {"contractId"},

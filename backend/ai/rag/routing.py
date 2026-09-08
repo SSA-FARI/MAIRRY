@@ -48,7 +48,7 @@ def classify_rag_route(question: str) -> tuple[RagRoute, set[KnowledgeType]]:
     if has_clause and has_finance:
         return RagRoute.MIXED, {KnowledgeType.CONTRACT_CLAUSE}
     if has_clause:
-        return RagRoute.RAG, {KnowledgeType.CONTRACT_CLAUSE, KnowledgeType.DOMAIN_KNOWLEDGE}
+        return RagRoute.RAG, {KnowledgeType.CONTRACT_CLAUSE}
     if any(word in question for word in _FAQ_WORDS):
         return RagRoute.RAG, {KnowledgeType.SERVICE_FAQ}
     if any(word in question for word in _DOMAIN_WORDS):
