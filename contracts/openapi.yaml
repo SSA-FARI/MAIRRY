@@ -11,6 +11,10 @@ paths:
       operationId: getHealth
       responses:
         "200": {description: API health, content: {application/json: {schema: {$ref: "#/components/schemas/Health"}}}}
+    head:
+      operationId: headHealth
+      responses:
+        "200": {description: API health without a response body}
   /v1/auth/demo-login:
     post:
       operationId: demoLogin

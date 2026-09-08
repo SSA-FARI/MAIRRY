@@ -52,6 +52,7 @@ MAIRRY MVP REST API의 동작, 검증, 상태 전이를 정의한다. 기계 판
 | Method | Path | 성공 | 설명 |
 |---|---|---:|---|
 | GET | `/health` | 200 | 상태 확인 |
+| HEAD | `/health` | 200 | 본문 없는 상태 확인 |
 | POST | `/v1/auth/demo-login` | 200 | 설정된 단일 Demo User 조회·초기화 |
 | GET | `/wedding-plan` | 200 | 계획 조회 |
 | PUT | `/wedding-plan` | 200 | 계획 생성/수정 |
@@ -74,6 +75,10 @@ MAIRRY MVP REST API의 동작, 검증, 상태 전이를 정의한다. 기계 판
 ### GET /api/health
 
 응답 200: `{"status": "ok"}`
+
+### HEAD /api/health
+
+응답 200, 응답 본문 없음. GET과 HEAD 외의 메서드는 405를 반환한다.
 
 ## Demo Login
 

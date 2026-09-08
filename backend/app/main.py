@@ -1,6 +1,6 @@
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
@@ -50,6 +50,11 @@ app.add_middleware(
 @app.get("/api/health", tags=["health"])
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.head("/api/health", tags=["health"], response_class=Response)
+def health_head() -> Response:
+    return Response(status_code=200)
 
 
 app.include_router(wedding_plan_router, prefix="/api")
