@@ -1,3 +1,4 @@
+from datetime import UTC, date, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
@@ -12,6 +13,10 @@ from app.domains.finance.service import FinanceService
 router = APIRouter(prefix="/finance", tags=["finance"])
 
 
+def get_finance_today() -> date:
+    return datetime.now(UTC).date()
+
+
 @router.get(
     "/summary",
     response_model=FinanceSummary,
@@ -20,8 +25,9 @@ router = APIRouter(prefix="/finance", tags=["finance"])
 def get_finance_summary(
     db: Annotated[Session, Depends(get_db)],
     configuration: Annotated[Settings, Depends(get_settings)],
+    today: Annotated[date, Depends(get_finance_today)],
 ) -> FinanceSummary:
-    return FinanceService(db, configuration).get_summary()
+    return FinanceService(db, configuration, today=today).get_summary()
 
 
 @router.post(
@@ -36,5 +42,6 @@ def simulate_finance(
     payload: SimulationRequest,
     db: Annotated[Session, Depends(get_db)],
     configuration: Annotated[Settings, Depends(get_settings)],
+    today: Annotated[date, Depends(get_finance_today)],
 ) -> SimulationResult:
-    return FinanceService(db, configuration).simulate(payload.amount)
+    return FinanceService(db, configuration, today=today).simulate(payload.amount)
