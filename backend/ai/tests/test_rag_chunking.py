@@ -46,6 +46,20 @@ def test_standalone_topic_heading_still_splits_clause() -> None:
     assert clauses[0].content.startswith("추가비용\n")
 
 
+def test_topic_heading_allows_spacing_between_korean_words() -> None:
+    clauses = split_structured_clauses("보증 인원 기준\n최소 인원은 200명이다.")
+
+    assert len(clauses) == 1
+    assert clauses[0].clause_title == "보증 인원 기준"
+
+
+def test_special_term_pattern_handles_long_horizontal_whitespace() -> None:
+    clauses = split_structured_clauses(f"특약{' ' * 10_000}X\n본문")
+
+    assert len(clauses) == 1
+    assert clauses[0].clause_title is None
+
+
 def test_numbered_section_heading_splits_without_matching_long_numbered_sentence() -> None:
     clauses = split_structured_clauses(
         "4. 주요 이용 조건\n"

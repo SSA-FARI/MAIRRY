@@ -4,16 +4,20 @@ from dataclasses import dataclass
 
 from ai.rag.schemas import KnowledgeType, RagChunk
 
-_ARTICLE_HEADING = r"제\s*\d+\s*조(?:의\s*\d+)?(?:\s*\([^\n)]{1,60}\))?"
-_SPECIAL_TERM_HEADING = r"특약(?:사항)?(?:\s*제?\s*\d+\s*(?:조|항)?[.)]?)?"
-_SECTION_HEADING = r"\d{1,2}\.\s+[^\n.!?。！？:：]{1,60}"
+_ARTICLE_HEADING = r"제[ \t]*\d+[ \t]*조(?:의[ \t]*\d+)?(?:[ \t]*\([^\n)]{1,60}\))?"
+_NUMBERED_SPECIAL_TERM_HEADING = r"특약(?:사항)?[ \t]+(?:제[ \t]*)?\d+[ \t]*(?:조|항)?[.)]?"
+_BARE_SPECIAL_TERM_HEADING = r"특약(?:사항)?"
+_SECTION_HEADING = r"\d{1,2}\.[ \t]+[^\n.!?。！？:：]{1,60}"
 _TOPIC_HEADING = (
-    r"(?:환불|취소|계약\s*해지|일정\s*변경|보증인원|추가\s*비용|책임\s*제한)"
-    r"(?:\s*(?:조건|규정|기준|정책|조항|사항|안내))?"
+    r"(?:환불|취소|계약[ \t]*해지|일정[ \t]*변경|보증[ \t]*인원|"
+    r"추가[ \t]*비용|책임[ \t]*제한)"
+    r"(?:[ \t]*(?:조건|규정|기준|정책|조항|사항|안내))?"
 )
 _HEADING_PATTERN = re.compile(
-    rf"(?mx)^[ \t]*(?:[-•]\s*)?(?P<title>(?:"
-    rf"(?:{_ARTICLE_HEADING}|{_SPECIAL_TERM_HEADING})(?=[ \t]*(?::|：|$)|[ \t]+\S)|"
+    rf"(?mx)^[ \t]*(?:[-•][ \t]*)?(?P<title>(?:"
+    rf"(?:{_ARTICLE_HEADING}|{_NUMBERED_SPECIAL_TERM_HEADING})"
+    rf"(?=[ \t]*(?::|：|$)|[ \t]+\S)|"
+    rf"{_BARE_SPECIAL_TERM_HEADING}(?=[ \t]*(?::|：|$))|"
     rf"{_SECTION_HEADING}(?=[ \t]*$)|"
     rf"{_TOPIC_HEADING}(?=[ \t]*(?::|：|$))"
     rf"))"
