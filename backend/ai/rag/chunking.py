@@ -4,9 +4,19 @@ from dataclasses import dataclass
 
 from ai.rag.schemas import KnowledgeType, RagChunk
 
+_ARTICLE_HEADING = r"제\s*\d+\s*조(?:의\s*\d+)?(?:\s*\([^\n)]{1,60}\))?"
+_SPECIAL_TERM_HEADING = r"특약(?:사항)?(?:\s*제?\s*\d+\s*(?:조|항)?[.)]?)?"
+_SECTION_HEADING = r"\d{1,2}\.\s+[^\n.!?。！？:：]{1,60}"
+_TOPIC_HEADING = (
+    r"(?:환불|취소|계약\s*해지|일정\s*변경|보증인원|추가\s*비용|책임\s*제한)"
+    r"(?:\s*(?:조건|규정|기준|정책|조항|사항|안내))?"
+)
 _HEADING_PATTERN = re.compile(
-    r"(?m)^(?P<title>(?:제\s*\d+\s*조(?:의\s*\d+)?(?:\s*\([^\n]+\))?|"
-    r"(?:특약|환불|취소|계약\s*해지|일정\s*변경|보증인원|추가\s*비용|책임\s*제한)[^\n]*))\s*$"
+    rf"(?mx)^[ \t]*(?:[-•]\s*)?(?P<title>(?:"
+    rf"(?:{_ARTICLE_HEADING}|{_SPECIAL_TERM_HEADING})(?=[ \t]*(?::|：|$)|[ \t]+\S)|"
+    rf"{_SECTION_HEADING}(?=[ \t]*$)|"
+    rf"{_TOPIC_HEADING}(?=[ \t]*(?::|：|$))"
+    rf"))"
 )
 _PAGE_ONLY = re.compile(r"^\s*(?:-\s*)?\d{1,3}(?:\s*-)?\s*$")
 
