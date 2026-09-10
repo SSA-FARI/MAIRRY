@@ -23,7 +23,7 @@ class CapturingSession:
         raise AssertionError("Vector search must not materialize all ORM rows with scalars().all()")
 
 
-def test_contract_search_applies_plan_status_and_active_filters_in_sql() -> None:
+def test_contract_search_requires_a_confirmed_contract_linked_to_the_same_plan_and_document() -> None:
     session = CapturingSession()
     plan_id = UUID(int=1)
 
@@ -42,7 +42,11 @@ def test_contract_search_applies_plan_status_and_active_filters_in_sql() -> None
     sql = str(compiled)
     assert results == []
     assert "document_chunks.wedding_plan_id" in sql
+    assert "document_chunks.contract_id IS NOT NULL" in sql
+    assert "document_chunks.document_id IS NOT NULL" in sql
     assert "contracts.status" in sql
+    assert "contracts.wedding_plan_id" in sql
+    assert "contracts.document_id = document_chunks.document_id" in sql
     assert "document_chunks.active IS true" in sql
     assert "document_chunks.embedding_vector IS NOT NULL" in sql
     assert "<=>" in sql
