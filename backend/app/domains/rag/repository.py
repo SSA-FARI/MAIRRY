@@ -131,10 +131,11 @@ class RagRepository:
                 and_(
                     DocumentChunk.knowledge_type == KnowledgeType.CONTRACT_CLAUSE.value,
                     DocumentChunk.wedding_plan_id == wedding_plan_id,
-                    or_(
-                        Contract.status == ContractStatus.CONFIRMED,
-                        DocumentChunk.contract_id.is_(None),
-                    ),
+                    DocumentChunk.contract_id.is_not(None),
+                    DocumentChunk.document_id.is_not(None),
+                    Contract.status == ContractStatus.CONFIRMED,
+                    Contract.wedding_plan_id == wedding_plan_id,
+                    Contract.document_id == DocumentChunk.document_id,
                 )
             )
         if global_types:
