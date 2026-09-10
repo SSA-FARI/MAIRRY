@@ -23,7 +23,7 @@ class CapturingSession:
         raise AssertionError("Vector search must not materialize all ORM rows with scalars().all()")
 
 
-def test_contract_search_requires_a_confirmed_contract_linked_to_the_same_plan_and_document() -> None:
+def test_contract_search_requires_confirmed_contract_linkage() -> None:
     session = CapturingSession()
     plan_id = UUID(int=1)
 
