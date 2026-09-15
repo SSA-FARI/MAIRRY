@@ -365,6 +365,7 @@ def test_contract_resolution_keeps_single_contract_fallback_without_a_vendor_nam
     registry._contracts.list_confirmed = lambda _plan_id: [contract]
 
     assert registry.resolve_contract_id("웨딩홀 계약 총액 알려줘", USER_ID) == CONTRACT_ID
+    assert registry.resolve_contract_id("오늘 웨딩홀 계약 총액 알려줘", USER_ID) == CONTRACT_ID
     assert registry.resolve_contract_id("A웨딩홀 계약 총액 알려줘", USER_ID) == CONTRACT_ID
     assert not registry.has_unmatched_explicit_contract_reference(
         "내 웨딩홀 계약 취소 조건은?", USER_ID

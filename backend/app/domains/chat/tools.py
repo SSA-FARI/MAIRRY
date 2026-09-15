@@ -38,16 +38,35 @@ _VENDOR_CATEGORY_SUFFIXES = (
     "영상",
 )
 _VENDOR_REFERENCE_PATTERN = re.compile(
+    r"(?<![가-힣A-Za-z0-9&._-])"
     r"(?P<reference>[가-힣A-Za-z0-9&._-]{1,30}"
     r"(?:웨딩홀|호텔|컨벤션|스튜디오|드레스|메이크업|스냅|영상))",
     re.IGNORECASE,
 )
 _VENDOR_BEFORE_CONTRACT_PATTERN = re.compile(
-    r"(?P<reference>[가-힣A-Za-z0-9&._-]{1,30})(?:계약서?|업체)",
+    r"(?<![가-힣A-Za-z0-9&._-])"
+    r"(?P<reference>[가-힣A-Za-z0-9&._-]{1,30})\s+(?:계약서?|업체)",
     re.IGNORECASE,
 )
 _GENERIC_VENDOR_PREFIXES = frozenset(
-    {"내", "우리", "이", "그", "해당", "현재", "등록한", "등록된", "확정한", "확정된", "올린"}
+    {
+        "내",
+        "우리",
+        "이",
+        "그",
+        "해당",
+        "현재",
+        "등록한",
+        "등록된",
+        "확정한",
+        "확정된",
+        "올린",
+        "오늘",
+        "내일",
+        "이번",
+        "일반",
+        "보통",
+    }
 )
 _GENERIC_CONTRACT_TARGETS = frozenset(
     {
@@ -538,8 +557,8 @@ def _matching_contracts(message: str, contracts: list[Contract]) -> list[Contrac
 
 
 def _has_explicit_vendor_reference(message: str) -> bool:
-    compact = _normalize_vendor_text(message)
-    for match in _VENDOR_REFERENCE_PATTERN.finditer(compact):
+    normalized = _normalize_vendor_reference_text(message)
+    for match in _VENDOR_REFERENCE_PATTERN.finditer(normalized):
         reference = match.group("reference")
         suffix = next(
             (candidate for candidate in _VENDOR_CATEGORY_SUFFIXES if reference.endswith(candidate)),
@@ -550,7 +569,7 @@ def _has_explicit_vendor_reference(message: str) -> bool:
         prefix = reference[: -len(suffix)]
         if prefix and not _contains_only_generic_vendor_prefixes(prefix):
             return True
-    for match in _VENDOR_BEFORE_CONTRACT_PATTERN.finditer(compact):
+    for match in _VENDOR_BEFORE_CONTRACT_PATTERN.finditer(normalized):
         reference = match.group("reference")
         if not _is_generic_contract_reference(reference):
             return True
@@ -579,3 +598,7 @@ def _contains_only_generic_vendor_prefixes(value: str) -> bool:
 
 def _normalize_vendor_text(value: str) -> str:
     return re.sub(r"[\s·ㆍ/]", "", value).casefold()
+
+
+def _normalize_vendor_reference_text(value: str) -> str:
+    return " ".join(re.sub(r"[·ㆍ/]", " ", value).casefold().split())
