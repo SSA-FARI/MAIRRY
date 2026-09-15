@@ -549,11 +549,14 @@ def _contract_lookup_label(query: str) -> str:
 
 def _matching_contracts(message: str, contracts: list[Contract]) -> list[Contract]:
     normalized_message = _normalize_vendor_text(message)
-    return [
-        contract
-        for contract in contracts
-        if _normalize_vendor_text(contract.company) in normalized_message
-    ]
+    matching = []
+    for contract in contracts:
+        if not isinstance(contract.company, str):
+            continue
+        normalized_company = _normalize_vendor_text(contract.company)
+        if normalized_company and normalized_company in normalized_message:
+            matching.append(contract)
+    return matching
 
 
 def _has_explicit_vendor_reference(message: str) -> bool:
