@@ -42,6 +42,15 @@
 
 ## 2. Branch Convention
 
+### 기준 브랜치
+
+- `main`은 배포 가능한 안정 버전을 유지하는 release 브랜치다.
+- `develop`은 다음 배포를 통합하는 기본 개발 브랜치다.
+- 기능·버그·리팩터링·문서 브랜치는 최신 `develop`에서 생성하고 PR base도 `develop`로 지정한다.
+- 배포 준비가 끝나면 `develop → main` release PR을 만들고, 필수 검증과 리뷰 후 Squash Merge한다.
+- 긴급 hotfix만 `main`에서 분기할 수 있다. hotfix를 `main`에 반영한 뒤 동일 변경을
+  `develop`에도 즉시 반영한다.
+
 ### 형식
 
 ```text
@@ -156,8 +165,9 @@ Rules:
 - Require conversation resolution before merging
 ```
 
-- `main`에 직접 Push하지 않는다.
+- `main`과 `develop`에 직접 Push하지 않는다.
 - 모든 변경사항은 Pull Request를 통해 반영한다.
+- 일반 작업 PR은 `develop`, release PR은 `main`을 base로 사용한다.
 - 최소 1명의 Approve가 필요하다.
 - Review Conversation이 모두 해결되어야 한다.
 - Required Status Check가 통과해야 한다.
@@ -166,3 +176,6 @@ Rules:
 - Merge 전 Conflict와 필수 리뷰 의견을 모두 해결한다.
 
 Squash Merge 메시지는 PR 제목 형식인 `[type] 변경 내용`을 유지한다.
+
+`develop`에도 승인, 필수 status check, conversation resolution을 요구하는 branch protection 또는
+Ruleset을 적용한다. 저장소 설정이 아직 적용 전이어도 동일한 팀 규칙을 따른다.

@@ -18,17 +18,26 @@ MAIRRY는 예비부부의 결혼 계약서에서 금액·지급일·주요 조�
 
 ## 현재 상태
 
-현재 저장소는 기능 개발을 시작하기 위한 초기 스캐폴딩입니다.
+현재 MVP 골든패스와 근거 기반 AI 채팅까지 연결되어 있으며, 계약 종류 확장과 답변 품질 고도화를
+진행하고 있습니다.
 
-- Next.js 프론트엔드와 기본 대시보드 예시
-- FastAPI 백엔드와 도메인별 라우터 골격
-- Backend 내부 AI 패키지 구조
-- 금융 계산과 Tool 선택 예시·테스트
-- OpenAPI 및 AI JSON Schema
-- PostgreSQL·MinIO 로컬 인프라 설정
-- 제품·화면·아키텍처·테스트 문서
+구현된 주요 기능:
 
-실제 DB CRUD, 파일 저장, 모델 API 연동, 문서 분석, 전체 UI와 인증은 후속 개발 대상입니다.
+- 데모 로그인과 사용자별 활성 WeddingPlan 관리
+- 결혼 예정일·가용 자금 설정 및 수정
+- PDF/JPG/PNG 계약서 검증, 비공개 객체 저장소 업로드와 제한된 원문 미리보기
+- AI Provider와 결정론적 Demo Fallback을 이용한 문서 분석
+- 추출 결과 검수·수정·확정과 계약·지급항목·취소조건 CRUD
+- 확정 계약의 미지급 항목을 기준으로 한 잔액·타임라인·추가 지출 시뮬레이션
+- Backend Tool과 RAG를 결합한 근거 기반 채팅 및 대화 이력 저장
+- OpenAPI·JSON Schema 검증, PostgreSQL migration, CI와 골든패스 E2E
+
+현재 범위와 후속 과제:
+
+- 구조화 추출 타입과 Demo Fallback은 예식장 계약 중심입니다. 촬영·드레스·메이크업 등 다양한
+  결혼 계약을 공통 조항 구조로 다루는 파싱·답변 파이프라인 확장이 필요합니다.
+- 로그인은 MVP용 데모 인증이며 운영용 인증·권한 체계는 후속 범위입니다.
+- RAG 검색 격리, 근거 품질 평가와 지원 질문 범위를 지속적으로 보강하고 있습니다.
 
 구현 우선순위와 완료 게이트는 `docs/10_IMPLEMENTATION_PLAN.md`, 4인 기능별 분담은
 `docs/11_TEAM_OWNERSHIP.md`, Git 협업 규칙은 `docs/12_GIT_CONVENTION.md`를 기준으로 합니다.
@@ -51,7 +60,7 @@ MAIRRY/
 │   ├── ai/                # 추출·Agent·프롬프트·평가
 │   └── tests/
 ├── contracts/             # OpenAPI·AI·Tool 공통 계약
-├── docs/                  # 개발 전 문서
+├── docs/                  # 제품·설계·운영 문서
 ├── infra/                 # PostgreSQL·MinIO
 └── scripts/               # 개발 환경 초기화
 ```
@@ -62,7 +71,7 @@ MAIRRY/
 - Backend: FastAPI, Python, PostgreSQL
 - AI: Vision LLM, 구조화 출력, Tool Calling
 - Storage: S3 호환 객체 스토리지
-- Test: Pytest, Playwright 예정
+- Test: Pytest, Vitest, Playwright
 
 ## 시작하기
 
@@ -77,9 +86,14 @@ Docker Compose가 운영체제와 개발 도구에 관계없는 공통 검증 �
 ### 1. 저장소 복제
 
 ```powershell
-git clone https://github.com/ssafyHuman/MAIRRY.git
+git clone https://github.com/SSA-FARI/MAIRRY.git
 cd MAIRRY
+git switch develop
 ```
+
+일반 기능·버그·문서 작업 브랜치는 최신 `develop`에서 생성하고 PR도 `develop`을 대상으로 합니다.
+배포할 때만 `develop → main` release PR을 생성합니다. 자세한 규칙은
+[docs/12_GIT_CONVENTION.md](docs/12_GIT_CONVENTION.md)를 참고합니다.
 
 ### 2. 환경파일 준비
 
