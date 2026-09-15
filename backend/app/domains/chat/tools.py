@@ -1,3 +1,4 @@
+import re
 from collections.abc import Callable
 from datetime import UTC, date, datetime
 from typing import Any
@@ -25,6 +26,47 @@ PAYMENT_TERM_ALIASES = {
 }
 
 SDM_TERMS = ("스드메", "스튜디오", "드레스", "메이크업", "웨딩촬영", "촬영", "패키지")
+
+_VENDOR_CATEGORY_SUFFIXES = (
+    "웨딩홀",
+    "호텔",
+    "컨벤션",
+    "스튜디오",
+    "드레스",
+    "메이크업",
+    "스냅",
+    "영상",
+)
+_VENDOR_REFERENCE_PATTERN = re.compile(
+    r"(?P<reference>[가-힣A-Za-z0-9&._-]{1,30}"
+    r"(?:웨딩홀|호텔|컨벤션|스튜디오|드레스|메이크업|스냅|영상))",
+    re.IGNORECASE,
+)
+_VENDOR_BEFORE_CONTRACT_PATTERN = re.compile(
+    r"(?P<reference>[가-힣A-Za-z0-9&._-]{1,30})(?:계약서?|업체)",
+    re.IGNORECASE,
+)
+_GENERIC_VENDOR_PREFIXES = frozenset(
+    {"내", "우리", "이", "그", "해당", "현재", "등록한", "등록된", "확정한", "확정된", "올린"}
+)
+_GENERIC_CONTRACT_TARGETS = frozenset(
+    {
+        *_GENERIC_VENDOR_PREFIXES,
+        "결혼",
+        "예식장",
+        "웨딩홀",
+        "호텔",
+        "컨벤션",
+        "스드메",
+        "촬영",
+        "웨딩촬영",
+        "스튜디오",
+        "드레스",
+        "메이크업",
+        "스냅",
+        "영상",
+    }
+)
 
 
 class ChatToolRegistry:
@@ -98,12 +140,23 @@ class ChatToolRegistry:
         if plan is None:
             return None
         contracts = self._contracts.list_confirmed(plan.id)
-        matching = [contract for contract in contracts if contract.company in message]
+        matching = _matching_contracts(message, contracts)
         if len(matching) == 1:
             return matching[0].id
+        if _has_explicit_vendor_reference(message):
+            return None
         if not matching and len(contracts) == 1:
             return contracts[0].id
         return None
+
+    def has_unmatched_explicit_contract_reference(self, message: str, user_id: UUID) -> bool:
+        if not _has_explicit_vendor_reference(message):
+            return False
+        plan = self._plans.get_current_for_user(user_id)
+        if plan is None:
+            return True
+        contracts = self._contracts.list_confirmed(plan.id)
+        return not _matching_contracts(message, contracts)
 
     def _get_user_contracts(
         self,
@@ -160,11 +213,7 @@ class ChatToolRegistry:
         plan = self._plans.get_current_for_user(user_id)
         if plan is None:
             return None
-        matching = [
-            contract
-            for contract in self._contracts.list_confirmed(plan.id)
-            if contract.company in message
-        ]
+        matching = _matching_contracts(message, self._contracts.list_confirmed(plan.id))
         if len(matching) != 1:
             return None
         contract = matching[0]
@@ -477,3 +526,56 @@ def _contract_lookup_label(query: str) -> str:
         if term in query:
             return term
     return "전체"
+
+
+def _matching_contracts(message: str, contracts: list[Contract]) -> list[Contract]:
+    normalized_message = _normalize_vendor_text(message)
+    return [
+        contract
+        for contract in contracts
+        if _normalize_vendor_text(contract.company) in normalized_message
+    ]
+
+
+def _has_explicit_vendor_reference(message: str) -> bool:
+    compact = _normalize_vendor_text(message)
+    for match in _VENDOR_REFERENCE_PATTERN.finditer(compact):
+        reference = match.group("reference")
+        suffix = next(
+            (candidate for candidate in _VENDOR_CATEGORY_SUFFIXES if reference.endswith(candidate)),
+            None,
+        )
+        if suffix is None:
+            continue
+        prefix = reference[: -len(suffix)]
+        if prefix and not _contains_only_generic_vendor_prefixes(prefix):
+            return True
+    for match in _VENDOR_BEFORE_CONTRACT_PATTERN.finditer(compact):
+        reference = match.group("reference")
+        if not _is_generic_contract_reference(reference):
+            return True
+    return False
+
+
+def _is_generic_contract_reference(reference: str) -> bool:
+    if reference in _GENERIC_CONTRACT_TARGETS:
+        return True
+    for suffix in _VENDOR_CATEGORY_SUFFIXES:
+        if reference.endswith(suffix):
+            return _contains_only_generic_vendor_prefixes(reference[: -len(suffix)])
+    return False
+
+
+def _contains_only_generic_vendor_prefixes(value: str) -> bool:
+    remainder = value
+    prefixes = sorted(_GENERIC_VENDOR_PREFIXES, key=len, reverse=True)
+    while remainder:
+        matched = next((prefix for prefix in prefixes if remainder.startswith(prefix)), None)
+        if matched is None:
+            return False
+        remainder = remainder[len(matched) :]
+    return True
+
+
+def _normalize_vendor_text(value: str) -> str:
+    return re.sub(r"[\s·ㆍ/]", "", value).casefold()
