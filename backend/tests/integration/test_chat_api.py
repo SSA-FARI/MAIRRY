@@ -344,6 +344,53 @@ def test_chat_without_plan_returns_insufficient_data_without_numbers(
         _cleanup(database_engine, [user_id])
 
 
+def test_unmatched_vendor_does_not_fall_back_to_the_only_contract(
+    database_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_id = uuid.uuid4()
+    _cleanup(database_engine, [user_id])
+    with Session(database_engine) as session:
+        _create_plan_with_contract(
+            session,
+            user_id,
+            company="A웨딩홀",
+            amount=20_000_000,
+            source_text="A웨딩홀 잔금 근거",
+        )
+        session.commit()
+
+    def search_must_not_run(*_args: object, **_kwargs: object) -> list[RetrievedChunk]:
+        raise AssertionError("an unmatched vendor must not search another contract")
+
+    monkeypatch.setattr(
+        "app.application.chat_orchestration.RagSearchService.search",
+        search_must_not_run,
+    )
+    _override_dependencies(database_engine, _configuration(str(database_engine.url), user_id))
+    client = TestClient(app)
+    try:
+        unmatched_tool = client.post("/api/chat", json={"message": "B웨딩홀 계약 총액 알려줘"})
+        unmatched_rag = client.post("/api/chat", json={"message": "B웨딩홀 취소 조건은?"})
+        generic_single_contract = client.post(
+            "/api/chat", json={"message": "웨딩홀 계약 총액 알려줘"}
+        )
+
+        assert unmatched_tool.status_code == unmatched_rag.status_code == 200
+        assert unmatched_tool.json()["answerType"] == "NOT_FOUND"
+        assert unmatched_rag.json()["answerType"] == "NOT_FOUND"
+        assert unmatched_tool.json()["citations"] == []
+        assert unmatched_rag.json()["citations"] == []
+        assert "A웨딩홀" not in unmatched_tool.json()["answer"]
+        assert "23,000,000" not in unmatched_tool.json()["answer"]
+        assert generic_single_contract.status_code == 200
+        assert "A웨딩홀" in generic_single_contract.json()["answer"]
+        assert "23,000,000" in generic_single_contract.json()["answer"]
+    finally:
+        app.dependency_overrides.clear()
+        _cleanup(database_engine, [user_id])
+
+
 def test_personal_contract_lookup_isolates_plans_and_keeps_rag_questions_separate(
     database_engine: Engine,
     monkeypatch: pytest.MonkeyPatch,

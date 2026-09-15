@@ -255,6 +255,21 @@ class ChatOrchestrationService:
                 if explicit_context_resolver is not None
                 else None
             )
+            unmatched_reference_resolver = getattr(
+                self._tools, "has_unmatched_explicit_contract_reference", None
+            )
+            has_unmatched_reference = (
+                explicit_context is None
+                and unmatched_reference_resolver is not None
+                and await run_in_threadpool(
+                    unmatched_reference_resolver,
+                    state["rewritten_question"],
+                    self._configuration.demo_user_id,
+                )
+            )
+            if has_unmatched_reference:
+                self.contract_resolution_source = "explicit_vendor_not_found"
+                return {"retrieved_chunks": [], "retrieval_failed": False}
             target_contract_id = (
                 UUID(explicit_context["contractId"])
                 if explicit_context is not None

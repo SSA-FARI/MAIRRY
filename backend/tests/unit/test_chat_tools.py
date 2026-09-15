@@ -345,3 +345,44 @@ def test_user_contract_lookup_returns_multiple_confirmed_contracts() -> None:
         "오뜨꾸뛰르 스튜디오",
     ]
     assert result.evidence == []
+
+
+def test_contract_resolution_does_not_replace_an_unmatched_vendor_with_the_only_contract() -> None:
+    registry = _registry()
+    contract = _contract()
+    contract.company = "A웨딩홀"
+    registry._contracts.list_confirmed = lambda _plan_id: [contract]
+
+    assert registry.resolve_contract_id("B웨딩홀 계약 총액 알려줘", USER_ID) is None
+    assert registry.resolve_contract_id("다온 계약 총액 알려줘", USER_ID) is None
+    assert registry.has_unmatched_explicit_contract_reference("B웨딩홀 취소 조건은?", USER_ID)
+
+
+def test_contract_resolution_keeps_single_contract_fallback_without_a_vendor_name() -> None:
+    registry = _registry()
+    contract = _contract()
+    contract.company = "A 웨딩홀"
+    registry._contracts.list_confirmed = lambda _plan_id: [contract]
+
+    assert registry.resolve_contract_id("웨딩홀 계약 총액 알려줘", USER_ID) == CONTRACT_ID
+    assert registry.resolve_contract_id("오늘 웨딩홀 계약 총액 알려줘", USER_ID) == CONTRACT_ID
+    assert registry.resolve_contract_id("A웨딩홀 계약 총액 알려줘", USER_ID) == CONTRACT_ID
+    assert not registry.has_unmatched_explicit_contract_reference(
+        "내 웨딩홀 계약 취소 조건은?", USER_ID
+    )
+    assert not registry.has_unmatched_explicit_contract_reference(
+        "현재 내 웨딩홀 계약 취소 조건은?", USER_ID
+    )
+
+
+def test_contract_resolution_ignores_contracts_with_an_invalid_company() -> None:
+    registry = _registry()
+    empty_company = _contract()
+    empty_company.company = ""
+    missing_company = _contract()
+    missing_company.id = UUID(int=44)
+    missing_company.company = None  # type: ignore[assignment]
+    registry._contracts.list_confirmed = lambda _plan_id: [empty_company, missing_company]
+
+    assert registry.resolve_contract_id("B웨딩홀 계약 총액 알려줘", USER_ID) is None
+    assert registry.has_unmatched_explicit_contract_reference("B웨딩홀 취소 조건은?", USER_ID)
